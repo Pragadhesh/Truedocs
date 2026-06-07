@@ -100,6 +100,12 @@ REMOVALS (something in the doc no longer applies)
 - A tool or contact that is being retired
 - An approval that is no longer required
 
+CRITICAL: Do NOT create a REMOVAL item just because a documented step was not
+mentioned in the Slack messages. Absence of mention is NOT evidence of removal.
+A REMOVAL requires an explicit announcement that something is being dropped.
+Example of a valid REMOVAL: "We're dropping the Jira update step from our process."
+Example of NOT a REMOVAL: The doc has 10 steps but Slack only mentioned 2.
+
 TEMPORARY EXCEPTIONS (time-bounded deviations)
 - Freezes, holds, blackouts, moratoriums
 - Temporary owner or coverage changes ("Sarah is out, ping Raj this week")
@@ -178,7 +184,30 @@ process updates). Split them into separate change items — one per distinct
 change — even though they share an evidence message.
 
 ═══════════════════════════════════════════════════════════
-PRINCIPLE 8 — PRESERVE FORMAT AND PRECISION
+PRINCIPLE 8 — QUESTION-AND-ANSWER THREADS
+═══════════════════════════════════════════════════════════
+Thread replies are included with the format:
+  ↳ [reply to "<parent message>"]: <reply text>
+
+If a question was asked in the channel and clearly answered in a reply thread,
+treat the ANSWER as documentation drift if it contains useful process knowledge
+not already in the doc.
+
+Pattern: someone asks a process question, a team member gives an authoritative answer.
+Action: flag as NEW_ADDITION with section "FAQ" (or an existing section if it fits better).
+  - current_doc_value: "Not currently documented"
+  - proposed_value: "Q: <the question>\nA: <the confirmed answer>"
+  - change_type: NEW_ADDITION
+  - evidence_messages: include both the question and the answer
+
+Do NOT flag a Q&A thread if:
+- The question is just logistics ("who's on call today?")
+- The answer is "I don't know" or non-committal
+- The topic is already well-documented in the Confluence page
+- The answer is opinion rather than authoritative process guidance
+
+═══════════════════════════════════════════════════════════
+PRINCIPLE 9 — PRESERVE FORMAT AND PRECISION
 ═══════════════════════════════════════════════════════════
 - proposed_value must be the ACTUAL replacement text, ready to paste — not a
   description of the change. Match the doc's existing format, units, and style
@@ -286,48 +315,29 @@ def analyze_changes(
     msg_lines = []
     for m in messages:
         text = (m.get("text") or "").strip()
-        if text:
+        if not text:
+            continue
+        if m.get("_is_thread_reply"):
+            parent = (m.get("_parent_text") or "")[:80]
+            msg_lines.append(f'  ↳ [reply to "{parent}"]: {text}')
+        else:
             msg_lines.append(f"- {text}")
     messages_text = "\n".join(msg_lines) if msg_lines else "(no messages)"
 
     logger.info(
-        "Running drift analysis — doc_text length=%d, message_count=%d",
-        len(doc_text),
-        len(msg_lines),
+        "Running drift analysis — doc_text=%d chars, messages=%d",
+        len(doc_text), len(msg_lines),
     )
-    logger.debug("Doc text (first 500 chars): %s", doc_text[:500])
-    logger.debug("Messages sent to Claude:\n%s", messages_text)
+    logger.debug("Messages:\n%s", messages_text)
 
     prompt = (
         f"Confluence documentation:\n{doc_text}\n\n"
-        f"Recent Slack messages:\n{messages_text}\n\n"
-        "Which Slack messages announce changes that contradict or extend the documentation?"
+        f"Recent Slack messages (↳ lines are thread replies):\n{messages_text}\n\n"
+        "Which messages announce changes or contain resolved Q&A that contradicts or extends the documentation?"
     )
-
-    # ── TEMPORARY DEBUG ──────────────────────────────────────────────────────
-    print(f"\n[TrueDocs DEBUG] === CONFLUENCE DOC ({len(doc_text)} chars) ===")
-    print(doc_text[:1000])
-    print(f"\n[TrueDocs DEBUG] === SLACK MESSAGES SENT TO CLAUDE ===")
-    print(messages_text)
-    print("[TrueDocs DEBUG] ─────────────────────────────────────────────────\n")
-    # ────────────────────────────────────────────────────────────────────────
 
     result = _analysis_agent.run_sync(prompt, model=get_model())
     output = result.output
-
-    # ── TEMPORARY DEBUG ──────────────────────────────────────────────────────
-    print(f"\n[TrueDocs DEBUG] === CLAUDE RESULT ===")
-    print(f"  has_changes: {output.has_changes}")
-    print(f"  ignored_messages ({len(output.ignored_messages)}): {output.ignored_messages}")
-    for c in output.changes:
-        print(f"  CHANGE [{c.change_type}/{c.confidence}] {c.section}")
-        print(f"    current: {c.current_doc_value}")
-        print(f"    proposed: {c.proposed_value}")
-        print(f"    evidence: {c.evidence_messages}")
-        if c.needs_clarification:
-            print(f"    CLARIFY: {c.clarification_note}")
-    print("[TrueDocs DEBUG] ─────────────────────────────────────────────────\n")
-    # ────────────────────────────────────────────────────────────────────────
 
     logger.info(
         "Claude result: has_changes=%s, changes=%d, ignored=%d",

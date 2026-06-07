@@ -52,7 +52,13 @@ def handle_approve_drift(ack, body: dict, client: WebClient, logger: Logger):
         )
 
         lookback = proc.get("lookback_window", "1d")
-        messages = fetch_channel_messages(client, channel_id, lookback)
+        trigger_phrase = proc.get("trigger_phrase") or ""
+        messages = fetch_channel_messages(
+            client,
+            channel_id,
+            lookback,
+            exclude_phrases=[trigger_phrase] if trigger_phrase else None,
+        )
 
         analysis = analyze_changes(messages, proc["confluence_page_url"], creds)
         if not analysis.has_changes:

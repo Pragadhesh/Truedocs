@@ -1,4 +1,4 @@
-"""Fetch channel messages within a lookback window for analysis."""
+"""Fetch channel messages and thread replies within a lookback window."""
 from __future__ import annotations
 import logging
 import time
@@ -29,20 +29,22 @@ def fetch_channel_messages(
     channel_id: str,
     lookback_window: str = "1d",
     exclude_thread_ts: str | None = None,
+    exclude_phrases: list[str] | None = None,
 ) -> list[dict]:
-    """Return all human messages in the channel within the lookback window, oldest first.
+    """Return top-level messages plus resolved Q&A thread replies, oldest first.
 
-    exclude_thread_ts: skip the trigger message and any replies in its thread,
-    so the 'run-truedocs' invocation itself is not analyzed as content.
+    exclude_thread_ts: skip the current trigger message and its thread.
+    exclude_phrases:   skip any message whose text exactly matches one of these
+                       (case-insensitive) — filters all past trigger invocations.
+    Each reply dict has _is_thread_reply=True and _parent_text set.
     """
     seconds = LOOKBACK_SECONDS.get(lookback_window, LOOKBACK_SECONDS["1d"])
-    oldest = str(int(time.time() - seconds))  # integer seconds — float formatting breaks Slack's oldest filter
+    oldest = str(int(time.time() - seconds))
 
-    # Ensure the bot is in the channel before reading history
     try:
         client.conversations_join(channel=channel_id)
-    except Exception as e:
-        print(f"[TrueDocs DEBUG] conversations_join: {e}")
+    except Exception:
+        pass
 
     all_messages: list[dict] = []
     cursor = None
@@ -51,61 +53,72 @@ def fetch_channel_messages(
         if cursor:
             kwargs["cursor"] = cursor
         result = client.conversations_history(**kwargs)
-        ok = result.get("ok")
-        error = result.get("error")
-        batch = result.get("messages", [])
-        print(f"[TrueDocs DEBUG] conversations_history ok={ok} error={error} msgs={len(batch)}")
-        if not ok:
-            raise RuntimeError(f"conversations.history failed: {error}")
-        all_messages.extend(batch)
+        if not result.get("ok"):
+            raise RuntimeError(f"conversations.history failed: {result.get('error')}")
+        all_messages.extend(result.get("messages", []))
         meta = result.get("response_metadata", {})
         cursor = meta.get("next_cursor")
         if not cursor:
             break
 
-    # conversations_history returns newest-first; reverse for chronological order
+    # newest-first → oldest-first
     all_messages.reverse()
 
-    def _keep(m: dict) -> bool:
+    _excluded_lower = [p.lower().strip() for p in (exclude_phrases or [])]
+
+    def _keep_top_level(m: dict) -> bool:
         if m.get("bot_id") or m.get("subtype"):
             return False
         if exclude_thread_ts:
-            # Drop the trigger message itself and any thread children under it
             if m.get("ts") == exclude_thread_ts:
                 return False
             if m.get("thread_ts") == exclude_thread_ts:
                 return False
+        if _excluded_lower:
+            if (m.get("text") or "").lower().strip() in _excluded_lower:
+                return False
         return True
 
-    # ── TEMPORARY DEBUG ──────────────────────────────────────────────────────
-    print(f"\n[TrueDocs DEBUG] channel={channel_id} window={lookback_window} oldest={oldest}")
-    print(f"[TrueDocs DEBUG] Raw messages from API: {len(all_messages)}")
-    for m in all_messages:
-        reason = ""
-        if m.get("bot_id"):
-            reason = "SKIP(bot)"
-        elif m.get("subtype"):
-            reason = f"SKIP(subtype={m.get('subtype')})"
-        elif exclude_thread_ts and m.get("ts") == exclude_thread_ts:
-            reason = "SKIP(trigger msg)"
-        elif exclude_thread_ts and m.get("thread_ts") == exclude_thread_ts:
-            reason = "SKIP(trigger thread)"
-        else:
-            reason = "KEEP"
-        print(f"  {reason} [{m.get('ts')}] user={m.get('user','?')} subtype={m.get('subtype')} bot_id={m.get('bot_id')} text={repr((m.get('text') or '')[:80])}")
-    print("[TrueDocs DEBUG] ─────────────────────────────────────────────────\n")
-    # ────────────────────────────────────────────────────────────────────────
+    kept = [m for m in all_messages if _keep_top_level(m)]
+    logger.info("Fetched %d top-level messages from %s (window=%s)", len(kept), channel_id, lookback_window)
 
-    return [m for m in all_messages if _keep(m)]
+    # Fetch replies for threads that have them (Q&A detection)
+    result_messages: list[dict] = []
+    for m in kept:
+        result_messages.append(m)
+        if m.get("reply_count", 0) > 0:
+            _append_thread_replies(client, channel_id, m, result_messages, _excluded_lower)
+
+    return result_messages
 
 
-def format_messages_for_prompt(messages: list[dict]) -> str:
-    """Format messages into a readable string for Claude."""
-    lines = []
-    for m in messages:
-        user = m.get("user", "unknown")
-        text = (m.get("text") or "").strip()
-        ts = m.get("ts", "")
-        if text:
-            lines.append(f"[{user} at {ts}]: {text}")
-    return "\n".join(lines) if lines else "(no messages)"
+def _append_thread_replies(
+    client: WebClient,
+    channel_id: str,
+    parent: dict,
+    out: list[dict],
+    excluded_lower: list[str],
+) -> None:
+    """Fetch replies for a thread and append them to out (excluding bots and trigger phrases)."""
+    try:
+        result = client.conversations_replies(
+            channel=channel_id,
+            ts=parent["ts"],
+            limit=50,
+        )
+        replies = result.get("messages", [])
+    except Exception as e:
+        logger.warning("Could not fetch thread replies for %s: %s", parent["ts"], e)
+        return
+
+    parent_text = (parent.get("text") or "").strip()
+    for reply in replies[1:]:  # skip index 0 — it's the parent message
+        if reply.get("bot_id") or reply.get("subtype"):
+            continue
+        text_lower = (reply.get("text") or "").lower().strip()
+        if text_lower in excluded_lower:
+            continue
+        enriched = dict(reply)
+        enriched["_is_thread_reply"] = True
+        enriched["_parent_text"] = parent_text
+        out.append(enriched)
