@@ -1,4 +1,4 @@
-"""Orchestrate: observe thread → diff vs Confluence → post drift card."""
+"""Orchestrate: fetch channel messages → analyze vs Confluence → post drift card."""
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
@@ -8,8 +8,8 @@ from slack_sdk import WebClient
 import db.credentials as credentials
 import db.processes as processes
 from blockkit.drift_card import build_drift_card
-from modes.diff import compare
-from modes.observe import extract_steps
+from modes.diff import analyze_changes
+from modes.observe import fetch_channel_messages, LOOKBACK_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +21,19 @@ def run_pipeline(
     thread_ts: str,
     process: dict,
 ) -> None:
-    """Observe thread → diff vs Confluence → post drift card in thread."""
+    """Fetch channel messages, analyze against Confluence doc, post drift card in thread."""
     try:
+        lookback = process.get("lookback_window", "1d")
+        label = LOOKBACK_LABELS.get(lookback, lookback)
+
         client.chat_postMessage(
             channel=channel_id,
             thread_ts=thread_ts,
-            text=f":mag: Observing thread for *{process['name']}*...",
+            text=f":mag: Scanning the last *{label}* of #{process['name']} messages against the Confluence doc...",
         )
 
-        observed = extract_steps(client, channel_id, thread_ts, process["name"])
+        messages = fetch_channel_messages(client, channel_id, lookback)
+        logger.info(f"Fetched {len(messages)} messages from {channel_id} (window={lookback})")
 
         creds = credentials.get(workspace_id)
         if not creds:
@@ -40,19 +44,20 @@ def run_pipeline(
             )
             return
 
-        drift = compare(observed, process["confluence_page_url"], creds)
+        analysis = analyze_changes(messages, process["confluence_page_url"], creds)
+        logger.info(f"Analysis complete: has_changes={analysis.has_changes}, {len(analysis.changes)} changes")
 
-        blocks = build_drift_card(process, drift, thread_ts)
+        blocks = build_drift_card(process, analysis, thread_ts)
         client.chat_postMessage(
             channel=channel_id,
             thread_ts=thread_ts,
-            text=f"TrueDocs drift analysis for *{process['name']}*",
+            text=f"TrueDocs — *{process['name']}* documentation check",
             blocks=blocks,
         )
 
         processes.update(
             process["id"],
-            drift_detected=drift.has_drift,
+            drift_detected=analysis.has_changes,
             last_observed_at=datetime.now(timezone.utc).isoformat(),
         )
 

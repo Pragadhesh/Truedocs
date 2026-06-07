@@ -1,323 +1,165 @@
-# Starter Agent for Slack (Bolt for Python and Pydantic AI)
+# TrueDocs
 
-A minimal starter template for building AI-powered Slack agents with [Bolt for Python](https://docs.slack.dev/tools/bolt-python/) and [Pydantic AI](https://ai.pydantic.dev/) using models from [Anthropic](https://anthropic.com) or [OpenAI](https://openai.com). Works with the [Slack MCP Server](https://github.com/slackapi/slack-mcp-server) to search messages, read channels, send messages, and manage canvases — all from within your agent.
+**TrueDocs** is a Slack agent that keeps your organisation's Confluence runbooks and SOPs automatically up to date by detecting when team announcements in Slack contradict or extend what's written in the documentation — and proposing targeted edits with one-click approval.
 
-## App Overview
+## The problem
 
-The starter agent interacts with users through four entry points:
+Documentation rots. A deployment runbook gets written once. Then someone announces in Slack: *"deployment window is changing to 4–9 PM this week"* — but the doc still says 2–7 PM. Or: *"we're putting deployments on hold for December"* — the doc says nothing. A few weeks later, the runbook is wrong, people stop trusting it, and process knowledge collapses back into a few people's heads.
 
-* **App Home** — Displays a welcome message with instructions on how to interact.
-* **Direct Messages** — Users message the agent directly. It responds in-thread, maintaining context across follow-ups.
-* **Channel @mentions** — Mention the agent in any channel to get a response without leaving the conversation.
-* **Assistant Panel** — Users click _Add Agent_ in Slack, select the agent, and pick from suggested prompts or type a message.
+TrueDocs treats your Slack channels as the source of truth for what's *actually* happening, and automatically reconciles your Confluence docs against what the team announces.
 
-The template also includes one example tool (emoji reactions). Add your own tools to customize it for your use case.
+## How it works
 
-### Slack MCP Server
+```
+Slack announcement  →  TrueDocs detects discrepancy  →  Posts drift card  →  One-click Confluence update
+```
 
-When connected to the [Slack MCP Server](https://github.com/slackapi/slack-mcp-server), the agent can search messages and files, read channel history and threads, send and schedule messages, and create and update canvases. When deployed with OAuth (HTTP mode), the agent automatically connects to the Slack MCP Server using the user's token.
+1. **Register** — point TrueDocs at a Confluence page and a Slack channel. Pick a trigger phrase (e.g. `run-check`) and how far back to scan (1 hour → 1 week).
+2. **Observe** — when the trigger phrase is posted in the channel, TrueDocs reads all messages in the configured time window.
+3. **Analyze** — Claude (Sonnet 4.6) compares the messages against the Confluence page and identifies any announcements that *contradict or extend* the documentation: changed values, new steps, temporary freezes, updated ownership, etc.
+4. **Propose** — TrueDocs posts a drift card in the thread showing what changed, what the doc currently says, what Slack announced, and whether the change is temporary.
+5. **Update** — click **Approve** and TrueDocs rewrites the affected sections of the Confluence page (preserving structure and formatting), then posts a link to the updated page. Click **Reject** to leave the doc unchanged.
+
+## Example
+
+> **Slack**: *"@team deployment window is changing from 2–7 PM to 4–9 PM this week due to the on-call rotation"*
+>
+> **Confluence doc says**: *Deployment window: 2:00 PM – 7:00 PM*
+
+TrueDocs drift card:
+
+| | |
+|---|---|
+| **Section** | Deployment Window _(temporary)_ |
+| **Doc says** | Deployment window: 2:00 PM – 7:00 PM |
+| **Slack says** | Deployment window changed to 4–9 PM this week |
+| **Evidence** | *"deployment window is changing from 2–7 PM to 4–9 PM this week due to the on-call rotation"* |
+
+→ Click **Approve & Update Confluence** → done. The page is updated and a link is posted in the thread.
 
 ## Setup
 
-Before getting started, make sure you have a development workspace where you have permissions to install apps.
+### Prerequisites
 
-### Developer Program
+- Python 3.11+ with [uv](https://docs.astral.sh/uv/)
+- A Slack workspace with permission to install apps
+- A Confluence Cloud account with an API token
+- An Anthropic API key
 
-Join the [Slack Developer Program](https://api.slack.com/developer-program) for exclusive access to sandbox environments for building and testing your apps, tooling, and resources created to help you build and grow.
+### Install
+
+```bash
+git clone https://github.com/your-org/truedocs
+cd truedocs
+uv sync
+```
+
+### Environment variables
+
+Copy `.env.sample` to `.env` and fill in:
+
+```bash
+SLACK_APP_TOKEN=xapp-...          # Socket Mode app-level token
+SLACK_BOT_TOKEN=xoxb-...          # Bot user token
+ANTHROPIC_API_KEY=sk-ant-...      # Claude API key
+
+# Optional: pre-seed default Confluence credentials
+CONFLUENCE_EMAIL=you@company.com
+CONFLUENCE_API_TOKEN=your-atlassian-token
+```
 
 ### Create the Slack app
 
-<details><summary><strong>Using Slack CLI</strong></summary>
+1. Go to [api.slack.com/apps/new](https://api.slack.com/apps/new) and choose **From an app manifest**
+2. Paste the contents of [`manifest.json`](./manifest.json) and click **Next**
+3. Review and click **Create**, then **Install to Workspace**
+4. Copy the **Bot User OAuth Token** into `SLACK_BOT_TOKEN`
+5. Under **Basic Information → App-Level Tokens**, create a token with `connections:write` scope and copy it into `SLACK_APP_TOKEN`
 
-Install the latest version of the Slack CLI for your operating system:
+### Run
 
-- [Slack CLI for macOS & Linux](https://docs.slack.dev/tools/slack-cli/guides/installing-the-slack-cli-for-mac-and-linux/)
-- [Slack CLI for Windows](https://docs.slack.dev/tools/slack-cli/guides/installing-the-slack-cli-for-windows/)
-
-You'll also need to log in if this is your first time using the Slack CLI.
-
-```sh
-slack login
+```bash
+uv run python app.py
 ```
 
-#### Initializing the project
+## Usage
 
-```sh
-slack create my-starter-agent --template slack-samples/bolt-python-starter-agent --subdir pydantic-ai
-cd my-starter-agent
-```
+### Step 1 — Connect Confluence
 
-</details>
+Open the TrueDocs App Home in Slack and click **Connect Confluence**. Enter your Atlassian email and API token. TrueDocs stores the credentials and uses them to read and update Confluence pages.
 
-<details><summary><strong>Using App Settings</strong></summary>
+### Step 2 — Register a process
 
-#### Create Your Slack App
+Click **Register New Process** and fill in:
 
-1. Open [https://api.slack.com/apps/new](https://api.slack.com/apps/new) and choose "From an app manifest"
-2. Choose the workspace you want to install the application to
-3. Copy the contents of [manifest.json](./manifest.json) into the text box that says `*Paste your manifest code here*` (within the JSON tab) and click _Next_
-4. Review the configuration and click _Create_
-5. Click _Install to Workspace_ and _Allow_ on the screen that follows. You'll then be redirected to the App Configuration dashboard.
+| Field | Description |
+|---|---|
+| **Name** | What this process is (e.g. *Deployment Runbook*) |
+| **Channel** | The Slack channel where announcements are made |
+| **Confluence page URL** | The page to keep up to date |
+| **Observation window** | How far back to scan (1h / 4h / 12h / 1d / 1w) |
+| **Trigger phrase** | A keyword that starts the check (e.g. `run-check`, `deploying`) |
 
-#### Environment Variables
+TrueDocs verifies it can access the Confluence page before saving.
 
-Before you can run the app, you'll need to store some environment variables.
+### Step 3 — Post the trigger phrase
 
-1. Rename `.env.sample` to `.env`.
-2. Open your apps setting page from [this list](https://api.slack.com/apps), click _OAuth & Permissions_ in the left hand menu, then copy the _Bot User OAuth Token_ into your `.env` file under `SLACK_BOT_TOKEN`.
+Type your trigger phrase in the registered channel. TrueDocs scans the channel's recent messages against the Confluence doc and posts a drift card in the thread.
 
-```sh
-SLACK_BOT_TOKEN=YOUR_SLACK_BOT_TOKEN
-```
+### Step 4 — Approve or reject
 
-3. Click _Basic Information_ from the left hand menu and follow the steps in the _App-Level Tokens_ section to create an app-level token with the `connections:write` scope. Copy that token into your `.env` as `SLACK_APP_TOKEN`.
+Review each detected change. Click **Approve & Update Confluence** to apply all changes, or **Reject** to leave the doc as is.
 
-```sh
-SLACK_APP_TOKEN=YOUR_SLACK_APP_TOKEN
-```
-
-#### Initializing the project
-
-```sh
-git clone https://github.com/slack-samples/bolt-python-starter-agent.git my-starter-agent
-cd my-starter-agent
-```
-
-</details>
-
-### Setup your python virtual environment
-
-```sh
-python3 -m venv .venv
-source .venv/bin/activate  # for Windows OS, .\.venv\Scripts\Activate instead should work
-```
-
-#### Install dependencies
-
-```sh
-pip install -r requirements.txt
-```
-
-## Providers
-
-This app supports both Anthropic and OpenAI as AI providers. Set at least one API key — if both are set, Anthropic is used by default.
-
-### Anthropic Setup
-
-Uses Anthropic's `claude-sonnet-4-6` model through Pydantic AI.
-
-1. Create an API key from your [Anthropic dashboard](https://console.anthropic.com/settings/keys).
-1. Rename `.env.sample` to `.env`.
-3. Save the Anthropic API key to `.env`:
-
-```sh
-ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
-```
-
-### OpenAI Setup
-
-Uses OpenAI's `gpt-4.1-mini` model through Pydantic AI.
-
-1. Create an API key from your [OpenAI dashboard](https://platform.openai.com/api-keys).
-1. Rename `.env.sample` to `.env`.
-3. Save the OpenAI API key to `.env`:
-
-```sh
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-```
-
-## Development
-
-### Starting the app
-
-<details><summary><strong>Using the Slack CLI</strong></summary>
-
-#### Slack CLI
-
-```sh
-slack run
-```
-</details>
-
-<details><summary><strong>Using the Terminal</strong></summary>
-
-#### Terminal
-
-```sh
-python3 app.py
-```
-
-</details>
-
-<details><summary><strong>Using OAuth HTTP Server (with ngrok)</strong></summary>
-
-#### OAuth HTTP Server
-
-This mode uses an HTTP server instead of Socket Mode, which is required for OAuth-based distribution.
-
-1. Install [ngrok](https://ngrok.com/download) and start a tunnel:
-
-```sh
-ngrok http 3000
-```
-
-2. Copy the `https://*.ngrok-free.app` URL from the ngrok output.
-
-<details><summary><strong>Using Slack CLI</strong></summary>
-
-#### Slack CLI
-
-3. Update `manifest.json` for HTTP mode:
-   - Set `socket_mode_enabled` to `false`
-   - Replace `ngrok-free.app` with your ngrok domain (e.g. `YOUR_NGROK_SUBDOMAIN.ngrok-free.app`)
-
-4. Create a new local dev app:
-
-```sh
-slack install -E local
-```
-
-5. _(Slack CLI < v4.1.0 only)_ Enable MCP for your app:
-   - Run `slack app settings` to open your app's settings
-   - Navigate to **Agents & AI Apps** in the left-side navigation
-   - Toggle **Model Context Protocol** on
-
-6. Update your `.env` OAuth environment variables:
-   - Run `slack app settings` to open App Settings
-   - Copy **Client ID**, **Client Secret**, and **Signing Secret**
-   - Update `SLACK_REDIRECT_URI` in `.env` with your ngrok domain
-
-```sh
-SLACK_CLIENT_ID=YOUR_CLIENT_ID
-SLACK_CLIENT_SECRET=YOUR_CLIENT_SECRET
-SLACK_SIGNING_SECRET=YOUR_SIGNING_SECRET
-SLACK_REDIRECT_URI=https://YOUR_NGROK_SUBDOMAIN.ngrok-free.app/slack/oauth_redirect
-```
-
-7. Start the app:
-
-```sh
-slack run app_oauth.py
-```
-
-8. Click the install URL printed in the terminal to install the app to your workspace via OAuth.
-
-</details>
-
-<details><summary><strong>Using the Terminal</strong></summary>
-
-#### Terminal
-
-3. Create your Slack app at [api.slack.com/apps/new](https://api.slack.com/apps/new) using [`manifest.json`](./manifest.json). Before pasting the manifest, set `socket_mode_enabled` to `false` and replace `ngrok-free.app` with your ngrok domain.
-
-4. Install the app to your workspace and copy the following values into your `.env`:
-   - **Signing Secret** — from _Basic Information_
-   - **Bot User OAuth Token** — from _OAuth & Permissions_
-   - **Client ID** and **Client Secret** — from _Basic Information_
-
-```sh
-SLACK_BOT_TOKEN=xoxb-YOUR_BOT_TOKEN
-SLACK_CLIENT_ID=YOUR_CLIENT_ID
-SLACK_CLIENT_SECRET=YOUR_CLIENT_SECRET
-SLACK_SIGNING_SECRET=YOUR_SIGNING_SECRET
-SLACK_REDIRECT_URI=https://YOUR_NGROK_SUBDOMAIN.ngrok-free.app/slack/oauth_redirect
-```
-
-Replace `your-subdomain` in `SLACK_REDIRECT_URI` with your ngrok subdomain.
-
-5. Start the app:
-
-```sh
-python3 app_oauth.py
-```
-
-6. Click the install URL printed in the terminal to install the app to your workspace via OAuth.
-
-</details>
-
-> **Note:** Each time ngrok restarts, it generates a new URL. You'll need to update the ngrok domain in `manifest.json`, `SLACK_REDIRECT_URI` in your `.env`, and re-install the app.
-
-</details>
-
-### Using the App
-
-Once the agent is running, there are several ways to interact:
-
-**App Home** — Open the agent in Slack and click the _Home_ tab. You'll see a welcome message with instructions on how to interact.
-
-**Direct Messages** — Open a DM with the agent. You'll see suggested prompts like _Write a Message_, _Summarize_, and _Brainstorm_ — pick one or type your own message. The agent replies in a thread. Send follow-up messages in the same thread and the agent will maintain the full conversation context.
-
-**Channel @mentions** — Invite the agent to a channel by typing `/invite @agent-name` in the message box, then @mention it followed by your message. The agent responds in a thread so the channel stays clean.
-
-**Assistant Panel** — Click _Add Agent_ in the top-right corner of Slack, select the agent from the list, then pick a suggested prompt or type a message.
-
-### Linting
-
-```sh
-# Run ruff check from root directory for linting
-ruff check
-
-# Run ruff format from root directory for code formatting
-ruff format
-```
-
-## Project Structure
-
-### `manifest.json`
-
-`manifest.json` is a configuration for Slack apps. With a manifest, you can create an app with a pre-defined configuration, or adjust the configuration of an existing app.
-
-### `app.py`
-
-`app.py` is the entry point for the application and is the file you'll run to start the server. This project aims to keep this file as thin as possible, primarily using it as a way to route inbound requests.
-
-### `app_oauth.py`
-
-`app_oauth.py` is an alternative entry point that runs the app in HTTP mode instead of Socket Mode. This is intended for deployments that use OAuth for app distribution. See the HTTP Mode section under Development for setup instructions.
-
-### `/listeners`
-
-Every incoming request is routed to a "listener". This directory groups each listener based on the Slack Platform feature used.
-
-**`/listeners/events`** — Handles incoming events:
-
-- `app_home_opened.py` — Publishes the App Home view with a welcome message and MCP status.
-- `app_mentioned.py` — Responds to @mentions in channels.
-- `message.py` — Responds to direct messages from users.
-
-**`/listeners/actions`** — Handles interactive components:
-
-- `feedback_buttons.py` — Handles thumbs up/down feedback on agent responses.
-
-**`/listeners/views`** — Builds Block Kit views:
-
-- `app_home_builder.py` — Constructs the App Home Block Kit view.
-- `feedback_builder.py` — Creates the feedback button block attached to responses.
-
-### `/agent`
-
-The `agent.py` file defines the Pydantic AI Agent with a system prompt, personality, and tool configuration.
-
-The `deps.py` file defines the `AgentDeps` dataclass passed to the agent at runtime, providing access to the Slack client and conversation context.
-
-The `tools` directory contains one example tool (emoji reaction) that the agent can call during a conversation.
-
-### `/thread_context`
-
-The `store.py` file implements a thread-safe in-memory conversation history store, keyed by channel and thread. This enables multi-turn conversations where the agent remembers previous context within a thread.
-
-## Troubleshooting
-
-### MCP Server connection error: `HTTP error 400 (Bad Request)`
-
-If you see an error like:
+## Project structure
 
 ```
-Failed to connect to MCP server 'streamable_http: https://mcp.slack.com/mcp': HTTP error 400 (Bad Request)
+truedocs/
+├── app.py                        # Bolt entry, event wiring
+├── modes/
+│   ├── observe.py                # Fetch channel messages (Slack API)
+│   ├── diff.py                   # Claude analysis: Slack vs Confluence doc
+│   └── pipeline.py               # Orchestrate observe → analyze → propose
+├── blockkit/
+│   └── drift_card.py             # Block Kit drift card with approve/reject buttons
+├── integrations/
+│   └── confluence.py             # Confluence REST API v2 client
+├── db/
+│   ├── credentials.py            # Confluence credentials (file-backed JSON)
+│   └── processes.py              # Process registry (file-backed JSON)
+├── listeners/
+│   ├── events/
+│   │   ├── app_home_opened.py    # App Home view
+│   │   └── message.py            # Trigger phrase detection
+│   ├── actions/
+│   │   ├── confluence_setup.py   # Credential save handler
+│   │   ├── register_process.py   # Process registration handler
+│   │   └── drift_actions.py      # Approve / Reject handlers
+│   └── views/
+│       ├── app_home_builder.py   # App Home Block Kit builder
+│       ├── confluence_modal.py   # Credential modal
+│       └── register_modal.py     # Process registration modal
+├── agent/                        # General-purpose Slack AI agent (DM/mention mode)
+└── data/                         # Runtime data (gitignored)
+    ├── credentials.json
+    └── processes.json
 ```
 
-This means the Slack MCP feature has not been enabled for your app. There is no manifest property for this yet, so it must be toggled on manually:
+## Tech stack
 
-1. Run `slack app settings` to open your app's settings page (or visit [api.slack.com/apps](https://api.slack.com/apps) and select your app)
-2. Navigate to **Agents & AI Apps** in the left-side navigation
-3. Toggle **Slack Model Context Protocol** on
+| Component | Technology |
+|---|---|
+| Runtime | Python 3.11+ |
+| Slack framework | slack-bolt (Socket Mode) |
+| AI | Claude Sonnet 4.6 via PydanticAI |
+| Documentation | Confluence REST API v2 |
+| Persistence | JSON files (`data/`) |
+| HTTP client | httpx |
+| Package manager | uv |
+
+## Hackathon
+
+Built for the **Slack Agent Builder Challenge** on Devpost.
+
+**Track**: Slack Agent for Organizations
+
+**Hero technologies**: Slack AI · MCP · Real-Time Search API

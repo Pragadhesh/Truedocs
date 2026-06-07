@@ -8,13 +8,14 @@ from slack_sdk import WebClient
 import db.credentials as credentials
 import db.processes as processes
 from integrations.confluence import ConfluenceClient
-from modes.observe import extract_steps
+from modes.diff import analyze_changes, generate_updated_page_html, fetch_confluence_content
+from modes.observe import fetch_channel_messages
 
 logger = logging.getLogger(__name__)
 
 
 def handle_approve_drift(ack, body: dict, client: WebClient, logger: Logger):
-    """Re-observe the thread, then update the Confluence page with observed steps."""
+    """Re-analyze channel messages, generate updated page HTML, push to Confluence."""
     ack()
     raw = body["actions"][0]["value"]
     process_id, thread_ts = raw.split("|", 1)
@@ -47,27 +48,51 @@ def handle_approve_drift(ack, body: dict, client: WebClient, logger: Logger):
         client.chat_postMessage(
             channel=channel_id,
             thread_ts=thread_ts,
-            text=f":hourglass: <@{user_id}> approved — updating Confluence...",
+            text=f":hourglass: <@{user_id}> approved — analyzing changes and updating Confluence...",
         )
 
-        observed = extract_steps(client, channel_id, thread_ts, proc["name"])
-        new_steps = [s.description for s in observed.steps]
+        lookback = proc.get("lookback_window", "1d")
+        messages = fetch_channel_messages(client, channel_id, lookback)
 
-        cf = ConfluenceClient.from_credentials_and_page_url(creds, proc["confluence_page_url"])
-        success = cf.update_page(proc["confluence_page_url"], new_steps)
-
-        if success:
+        analysis = analyze_changes(messages, proc["confluence_page_url"], creds)
+        if not analysis.has_changes:
             client.chat_postMessage(
                 channel=channel_id,
                 thread_ts=thread_ts,
-                text=f":white_check_mark: Confluence page updated with {len(new_steps)} observed steps.",
+                text=":white_check_mark: No documentation changes found on re-analysis. Confluence unchanged.",
+            )
+            return
+
+        original_html, _ = fetch_confluence_content(proc["confluence_page_url"], creds)
+        if not original_html:
+            client.chat_postMessage(
+                channel=channel_id,
+                thread_ts=thread_ts,
+                text=":warning: Could not fetch Confluence page content.",
+            )
+            return
+
+        new_html = generate_updated_page_html(original_html, analysis)
+
+        cf = ConfluenceClient.from_credentials_and_page_url(creds, proc["confluence_page_url"])
+        success = cf.update_page_with_html(proc["confluence_page_url"], new_html)
+
+        if success:
+            change_count = len(analysis.changes)
+            client.chat_postMessage(
+                channel=channel_id,
+                thread_ts=thread_ts,
+                text=(
+                    f":white_check_mark: Confluence page updated with {change_count} change(s).\n"
+                    f"<{proc['confluence_page_url']}|View updated page>"
+                ),
             )
             processes.update(process_id, drift_detected=False)
         else:
             client.chat_postMessage(
                 channel=channel_id,
                 thread_ts=thread_ts,
-                text=":warning: Confluence update failed. Check your credentials and page permissions.",
+                text=":warning: Confluence update failed. Check credentials and page permissions.",
             )
     except Exception as e:
         logger.exception(f"Approve drift failed: {e}")
@@ -79,7 +104,7 @@ def handle_approve_drift(ack, body: dict, client: WebClient, logger: Logger):
 
 
 def handle_reject_drift(ack, body: dict, client: WebClient, logger: Logger):
-    """Dismiss the drift card."""
+    """Dismiss the drift card — leave Confluence unchanged."""
     ack()
     raw = body["actions"][0]["value"]
     _, thread_ts = raw.split("|", 1)
@@ -89,5 +114,5 @@ def handle_reject_drift(ack, body: dict, client: WebClient, logger: Logger):
     client.chat_postMessage(
         channel=channel_id,
         thread_ts=thread_ts,
-        text=f":no_entry_sign: <@{user_id}> rejected the drift — Confluence unchanged.",
+        text=f":no_entry_sign: <@{user_id}> rejected the update — Confluence unchanged.",
     )
