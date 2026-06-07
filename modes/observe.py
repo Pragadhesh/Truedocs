@@ -36,7 +36,13 @@ def fetch_channel_messages(
     so the 'run-truedocs' invocation itself is not analyzed as content.
     """
     seconds = LOOKBACK_SECONDS.get(lookback_window, LOOKBACK_SECONDS["1d"])
-    oldest = str(time.time() - seconds)
+    oldest = str(int(time.time() - seconds))  # integer seconds — float formatting breaks Slack's oldest filter
+
+    # Ensure the bot is in the channel before reading history
+    try:
+        client.conversations_join(channel=channel_id)
+    except Exception as e:
+        print(f"[TrueDocs DEBUG] conversations_join: {e}")
 
     all_messages: list[dict] = []
     cursor = None
@@ -45,7 +51,13 @@ def fetch_channel_messages(
         if cursor:
             kwargs["cursor"] = cursor
         result = client.conversations_history(**kwargs)
-        all_messages.extend(result.get("messages", []))
+        ok = result.get("ok")
+        error = result.get("error")
+        batch = result.get("messages", [])
+        print(f"[TrueDocs DEBUG] conversations_history ok={ok} error={error} msgs={len(batch)}")
+        if not ok:
+            raise RuntimeError(f"conversations.history failed: {error}")
+        all_messages.extend(batch)
         meta = result.get("response_metadata", {})
         cursor = meta.get("next_cursor")
         if not cursor:
@@ -64,6 +76,25 @@ def fetch_channel_messages(
             if m.get("thread_ts") == exclude_thread_ts:
                 return False
         return True
+
+    # ── TEMPORARY DEBUG ──────────────────────────────────────────────────────
+    print(f"\n[TrueDocs DEBUG] channel={channel_id} window={lookback_window} oldest={oldest}")
+    print(f"[TrueDocs DEBUG] Raw messages from API: {len(all_messages)}")
+    for m in all_messages:
+        reason = ""
+        if m.get("bot_id"):
+            reason = "SKIP(bot)"
+        elif m.get("subtype"):
+            reason = f"SKIP(subtype={m.get('subtype')})"
+        elif exclude_thread_ts and m.get("ts") == exclude_thread_ts:
+            reason = "SKIP(trigger msg)"
+        elif exclude_thread_ts and m.get("thread_ts") == exclude_thread_ts:
+            reason = "SKIP(trigger thread)"
+        else:
+            reason = "KEEP"
+        print(f"  {reason} [{m.get('ts')}] user={m.get('user','?')} subtype={m.get('subtype')} bot_id={m.get('bot_id')} text={repr((m.get('text') or '')[:80])}")
+    print("[TrueDocs DEBUG] ─────────────────────────────────────────────────\n")
+    # ────────────────────────────────────────────────────────────────────────
 
     return [m for m in all_messages if _keep(m)]
 

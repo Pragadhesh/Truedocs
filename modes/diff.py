@@ -233,21 +233,23 @@ consistent with the doc, undecided, or pure noise.
 
 _html_agent = Agent(
     output_type=str,
-    system_prompt=(
-        "You are a Confluence documentation editor.\n\n"
-        "You will receive:\n"
-        "1. The current Confluence page body in Confluence Storage Format (HTML-like XML)\n"
-        "2. A list of approved changes derived from Slack announcements\n\n"
-        "Your job: produce the updated Confluence Storage Format page body that incorporates all the changes.\n\n"
-        "Rules:\n"
-        "- Keep the existing structure and formatting of the document\n"
-        "- Update only the sections that changed\n"
-        "- For temporary changes, add a note like '(temporary — as announced in Slack)'\n"
-        "- At the end, add: <p><em>(TrueDocs) Last synced {date}</em></p>\n"
-        "- Return ONLY the updated Confluence Storage Format HTML, nothing else\n"
-        "- Preserve all Confluence macros and special tags\n"
-        "- Do NOT add markdown — this is Confluence Storage Format HTML"
-    ),
+    system_prompt="""You are a surgical Confluence Storage Format editor.
+
+You will receive the COMPLETE original Confluence Storage Format HTML and a numbered list of
+FIND / REPLACE substitutions to apply to it.
+
+YOUR ONLY JOB: copy the original HTML exactly as-is, applying ONLY the specified text substitutions.
+
+STRICT RULES:
+1. Start with the full original HTML — do NOT omit, reorder, or restructure any element.
+2. For each substitution: find the FIND text inside HTML text nodes and replace it with the REPLACE text.
+   If you cannot find the exact FIND text, leave that section unchanged.
+3. Make NO other changes — do not reformat, prettify, add sections, or rewrite anything.
+4. Do NOT wrap the output in markdown code fences (no ```html or ``` ).
+5. Do NOT add <!DOCTYPE>, <html>, <head>, or <body> tags — output only what was in the original.
+6. At the very end append exactly: <p><em>(TrueDocs) Last synced DATE_PLACEHOLDER</em></p>
+   where DATE_PLACEHOLDER is the date provided in the prompt.
+7. Return ONLY the raw Confluence Storage Format HTML — nothing before or after it.""",
 )
 
 
@@ -302,8 +304,31 @@ def analyze_changes(
         "Which Slack messages announce changes that contradict or extend the documentation?"
     )
 
+    # ── TEMPORARY DEBUG ──────────────────────────────────────────────────────
+    print(f"\n[TrueDocs DEBUG] === CONFLUENCE DOC ({len(doc_text)} chars) ===")
+    print(doc_text[:1000])
+    print(f"\n[TrueDocs DEBUG] === SLACK MESSAGES SENT TO CLAUDE ===")
+    print(messages_text)
+    print("[TrueDocs DEBUG] ─────────────────────────────────────────────────\n")
+    # ────────────────────────────────────────────────────────────────────────
+
     result = _analysis_agent.run_sync(prompt, model=get_model())
     output = result.output
+
+    # ── TEMPORARY DEBUG ──────────────────────────────────────────────────────
+    print(f"\n[TrueDocs DEBUG] === CLAUDE RESULT ===")
+    print(f"  has_changes: {output.has_changes}")
+    print(f"  ignored_messages ({len(output.ignored_messages)}): {output.ignored_messages}")
+    for c in output.changes:
+        print(f"  CHANGE [{c.change_type}/{c.confidence}] {c.section}")
+        print(f"    current: {c.current_doc_value}")
+        print(f"    proposed: {c.proposed_value}")
+        print(f"    evidence: {c.evidence_messages}")
+        if c.needs_clarification:
+            print(f"    CLARIFY: {c.clarification_note}")
+    print("[TrueDocs DEBUG] ─────────────────────────────────────────────────\n")
+    # ────────────────────────────────────────────────────────────────────────
+
     logger.info(
         "Claude result: has_changes=%s, changes=%d, ignored=%d",
         output.has_changes,
@@ -324,26 +349,40 @@ def generate_updated_page_html(
     original_html: str,
     analysis: ChangeAnalysis,
 ) -> str:
-    """Use Claude to produce updated Confluence Storage Format HTML incorporating all approved changes."""
+    """Apply approved changes to the original Confluence Storage Format HTML.
+
+    Passes explicit FIND/REPLACE pairs to Claude so it makes surgical edits
+    instead of regenerating the whole page.
+    """
     from datetime import date
 
-    changes_text = "\n".join(
-        f"- Section: {c.section}\n"
-        f"  Type: {c.change_type}\n"
-        f"  Current text: {c.current_doc_value}\n"
-        f"  Replace with: {c.proposed_value}"
-        + (" (TEMPORARY — add a note that this is time-bounded)" if c.is_temporary else "")
-        + (f"\n  Effective: {c.effective_when}" if c.effective_when != "not specified" else "")
-        for c in analysis.changes
-    )
-
     today = date.today().isoformat()
+
+    substitutions = []
+    for i, c in enumerate(analysis.changes, 1):
+        temp_note = " (temporary — as announced in Slack)" if c.is_temporary else ""
+        when_note = f" Effective: {c.effective_when}." if c.effective_when not in ("", "not specified") else ""
+        substitutions.append(
+            f"Substitution {i} [{c.change_type}]:\n"
+            f"  FIND:        {c.current_doc_value}\n"
+            f"  REPLACE WITH: {c.proposed_value}{temp_note}{when_note}"
+        )
+
+    substitutions_text = "\n\n".join(substitutions)
+
     prompt = (
-        f"Current Confluence page (Storage Format):\n{original_html}\n\n"
-        f"Approved changes to incorporate:\n{changes_text}\n\n"
-        f"Today's date: {today}\n\n"
-        "Produce the updated Confluence Storage Format page."
+        f"ORIGINAL CONFLUENCE PAGE (Storage Format — copy this exactly with only the substitutions below):\n"
+        f"{original_html}\n\n"
+        f"SUBSTITUTIONS TO APPLY:\n{substitutions_text}\n\n"
+        f"TODAY'S DATE (use in the TrueDocs footer): {today}\n\n"
+        f"Apply the substitutions to the original HTML and return the result."
     )
 
     result = _html_agent.run_sync(prompt, model=get_model())
-    return result.output
+    html = result.output
+
+    # Strip any markdown code fences Claude might have added
+    html = re.sub(r"^```[a-z]*\n?", "", html.strip())
+    html = re.sub(r"\n?```$", "", html)
+
+    return html.strip()
