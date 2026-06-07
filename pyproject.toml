@@ -8,6 +8,7 @@ dependencies = [
     "slack-cli-hooks<1.0.0",
     "pydantic-ai[openai]",
     "python-dotenv==1.2.2",
+    "httpx>=0.27.0",
 ]
 
 [project.optional-dependencies]
@@ -20,7 +21,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["agent*", "listeners*", "thread_context*"]
+include = ["agent*", "db*", "integrations*", "listeners*", "thread_context*"]
 
 [tool.ruff]
 [tool.ruff.lint]

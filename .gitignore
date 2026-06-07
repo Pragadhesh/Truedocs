@@ -1,3 +1,9 @@
+# Local data (credentials, process registry — do not commit)
+data/
+
+# Runtime logs
+*.log
+
 # Build
 build/
 dist/
