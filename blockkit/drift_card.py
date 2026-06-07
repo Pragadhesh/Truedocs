@@ -1,6 +1,42 @@
 """Build the Block Kit drift card for the propose step."""
 from __future__ import annotations
-from modes.diff import ChangeAnalysis
+from modes.diff import ChangeAnalysis, ChangeItem
+
+_TYPE_ICON = {
+    "VALUE_UPDATE":        ":pencil2:",
+    "NEW_ADDITION":        ":new:",
+    "REMOVAL":             ":x:",
+    "TEMPORARY_EXCEPTION": ":clock3:",
+}
+
+_CONFIDENCE_LABEL = {
+    "HIGH":   "",
+    "MEDIUM": " _(medium confidence)_",
+    "LOW":    " _(low confidence — verify before approving)_",
+}
+
+
+def _change_block(i: int, c: ChangeItem) -> dict:
+    type_icon = _TYPE_ICON.get(c.change_type, ":pencil2:")
+    temp_badge = " _(temporary)_" if c.is_temporary else ""
+    confidence_note = _CONFIDENCE_LABEL.get(c.confidence, "")
+    when = f"\n:calendar: *Effective:* {c.effective_when}" if c.effective_when not in ("", "not specified") else ""
+
+    evidence = "\n".join(f'> _{e}_' for e in c.evidence_messages) if c.evidence_messages else ""
+
+    clarification = ""
+    if c.needs_clarification:
+        clarification = f"\n:question: *Needs clarification:* {c.clarification_note}"
+
+    text = (
+        f"{type_icon} *{i}. {c.section}*{temp_badge}{confidence_note}\n"
+        f":page_facing_up: *Currently says:* {c.current_doc_value}\n"
+        f":arrow_right: *Proposed update:* {c.proposed_value}{when}{clarification}"
+    )
+    if evidence:
+        text += f"\n:speech_balloon: *Evidence:*\n{evidence}"
+
+    return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
 
 
 def build_drift_card(process: dict, analysis: ChangeAnalysis, thread_ts: str) -> list[dict]:
@@ -14,10 +50,12 @@ def build_drift_card(process: dict, analysis: ChangeAnalysis, thread_ts: str) ->
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f":white_check_mark: *Documentation is up to date*\n{analysis.summary}",
+                    "text": ":white_check_mark: *Documentation is up to date* — no conflicting announcements found.",
                 },
             },
         ]
+
+    needs_review = any(c.needs_clarification or c.confidence == "LOW" for c in analysis.changes)
 
     blocks: list[dict] = [
         {
@@ -29,8 +67,8 @@ def build_drift_card(process: dict, analysis: ChangeAnalysis, thread_ts: str) ->
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f":rotating_light: *Documentation drift detected* — "
-                    f"{len(analysis.changes)} change(s) found\n{analysis.summary}"
+                    f":rotating_light: *{len(analysis.changes)} documentation change(s) detected*"
+                    + ("\n:warning: Some changes need clarification before approving." if needs_review else "")
                 ),
             },
         },
@@ -38,19 +76,7 @@ def build_drift_card(process: dict, analysis: ChangeAnalysis, thread_ts: str) ->
     ]
 
     for i, change in enumerate(analysis.changes, 1):
-        temp_badge = " _(temporary)_" if change.is_temporary else ""
-        blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": (
-                    f"*{i}. {change.section}*{temp_badge}\n"
-                    f":page_facing_up: *Doc says:* {change.current_doc_value}\n"
-                    f":mega: *Slack says:* {change.slack_announcement}\n"
-                    f":speech_balloon: _\"{change.evidence_message}\"_"
-                ),
-            },
-        })
+        blocks.append(_change_block(i, change))
 
     blocks.extend([
         {"type": "divider"},
@@ -59,8 +85,8 @@ def build_drift_card(process: dict, analysis: ChangeAnalysis, thread_ts: str) ->
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    ":point_up: Approve to let TrueDocs update the Confluence page automatically. "
-                    "Reject to leave the doc unchanged."
+                    ":white_check_mark: *Approve* — TrueDocs updates the Confluence page with all proposed changes.\n"
+                    ":no_entry_sign: *Reject* — Leave the doc unchanged."
                 ),
             },
         },
@@ -70,14 +96,14 @@ def build_drift_card(process: dict, analysis: ChangeAnalysis, thread_ts: str) ->
             "elements": [
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": ":white_check_mark: Approve & Update Confluence"},
+                    "text": {"type": "plain_text", "text": "Approve & Update Confluence"},
                     "action_id": "approve_drift",
                     "style": "primary",
                     "value": f"{process['id']}|{thread_ts}",
                 },
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "Reject — Keep Doc As Is"},
+                    "text": {"type": "plain_text", "text": "Reject"},
                     "action_id": "reject_drift",
                     "value": f"{process['id']}|{thread_ts}",
                 },
