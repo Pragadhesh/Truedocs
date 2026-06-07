@@ -8,7 +8,7 @@ from slack_sdk import WebClient
 import db.credentials as credentials
 import db.processes as processes
 from blockkit.drift_card import build_drift_card
-from modes.diff import analyze_changes
+from modes.diff import analyze_changes, ConfluenceFetchError
 from modes.observe import fetch_channel_messages, LOOKBACK_LABELS
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,14 @@ def run_pipeline(
         messages = fetch_channel_messages(client, channel_id, lookback)
         logger.info(f"Fetched {len(messages)} messages from {channel_id} (window={lookback})")
 
+        if not messages:
+            client.chat_postMessage(
+                channel=channel_id,
+                thread_ts=thread_ts,
+                text=f":information_source: No messages found in the last *{label}*. Nothing to compare.",
+            )
+            return
+
         creds = credentials.get(workspace_id)
         if not creds:
             client.chat_postMessage(
@@ -44,7 +52,16 @@ def run_pipeline(
             )
             return
 
-        analysis = analyze_changes(messages, process["confluence_page_url"], creds)
+        try:
+            analysis = analyze_changes(messages, process["confluence_page_url"], creds)
+        except ConfluenceFetchError as e:
+            client.chat_postMessage(
+                channel=channel_id,
+                thread_ts=thread_ts,
+                text=f":warning: *Could not read Confluence page* — {e}",
+            )
+            return
+
         logger.info(f"Analysis complete: has_changes={analysis.has_changes}, {len(analysis.changes)} changes")
 
         blocks = build_drift_card(process, analysis, thread_ts)
