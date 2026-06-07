@@ -35,6 +35,7 @@ def handle_edit_process(ack, body: dict, client: WebClient):
         "process_name": proc["name"],
         "confluence_page_url": proc["confluence_page_url"],
         "channel_id": proc["channel_id"],
+        "lookback_window": proc.get("lookback_window", "1d"),
     }
     client.views_open(
         trigger_id=body["trigger_id"],
@@ -75,6 +76,8 @@ def handle_register_process_submission(
     channel_id = vals["channel_block"]["channel_id"]["selected_channel"]
     trigger_option = vals["trigger_type_block"]["trigger_type"].get("selected_option")
     trigger_type = trigger_option["value"] if trigger_option else None
+    lookback_option = vals["lookback_window_block"]["lookback_window"].get("selected_option")
+    lookback_window = lookback_option["value"] if lookback_option else "1d"
 
     workspace_id = body["team"]["id"]
     user_id = body["user"]["id"]
@@ -113,13 +116,11 @@ def handle_register_process_submission(
 
     process_id = view.get("private_metadata", "").strip() or None  # set = edit mode
 
+    MANUAL_TRIGGER_PHRASE = "run-truedocs"
+
     trigger_phrase = trigger_time = trigger_day = None
     if trigger_type == "manual":
-        trigger_phrase = (
-            vals.get("trigger_phrase_block", {})
-            .get("trigger_phrase", {})
-            .get("value") or ""
-        ).strip() or None
+        trigger_phrase = MANUAL_TRIGGER_PHRASE
     elif trigger_type == "daily":
         trigger_time = (
             vals.get("trigger_time_block", {})
@@ -147,9 +148,10 @@ def handle_register_process_submission(
                 channel_id=channel_id,
                 confluence_page_url=confluence_page_url,
                 trigger_type=trigger_type,
-                trigger_phrase=trigger_phrase or "",
+                trigger_phrase=trigger_phrase if trigger_phrase else "",
                 trigger_time=trigger_time or "",
                 trigger_day=trigger_day or "",
+                lookback_window=lookback_window,
             )
         else:
             processes.create(
@@ -161,6 +163,7 @@ def handle_register_process_submission(
                 trigger_phrase=trigger_phrase,
                 trigger_time=trigger_time,
                 trigger_day=trigger_day,
+                lookback_window=lookback_window,
                 created_by=user_id,
             )
     except Exception as e:
@@ -224,4 +227,11 @@ def _extract_prefill(state: dict) -> dict:
         prefill["channel_id"] = (
             state["channel_block"].get("channel_id", {}).get("selected_channel")
         )
+    if "lookback_window_block" in state:
+        opt = (
+            state["lookback_window_block"]
+            .get("lookback_window", {})
+            .get("selected_option") or {}
+        )
+        prefill["lookback_window"] = opt.get("value", "1d")
     return prefill

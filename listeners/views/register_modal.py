@@ -1,3 +1,11 @@
+_LOOKBACK_OPTIONS = [
+    {"text": {"type": "plain_text", "text": "Last 1 hour"}, "value": "1h"},
+    {"text": {"type": "plain_text", "text": "Last 4 hours"}, "value": "4h"},
+    {"text": {"type": "plain_text", "text": "Last 12 hours"}, "value": "12h"},
+    {"text": {"type": "plain_text", "text": "Last 1 day"}, "value": "1d"},
+    {"text": {"type": "plain_text", "text": "Last 1 week"}, "value": "1w"},
+]
+
 _TRIGGER_OPTIONS = [
     {
         "text": {"type": "plain_text", "text": "Manual phrase"},
@@ -40,6 +48,7 @@ def build_register_modal(
     trigger_type: str | None = None,
     prefill: dict | None = None,
     process_id: str | None = None,
+    lookback_window: str | None = None,
 ) -> dict:
     """Build the Register a Process modal.
 
@@ -47,6 +56,7 @@ def build_register_modal(
     Pass prefill to restore text fields when rebuilding after trigger_type change.
     """
     p = prefill or {}
+    lookback_window = lookback_window or p.get("lookback_window") or "1d"
 
     def _iv(key: str) -> dict:
         val = p.get(key)
@@ -104,6 +114,23 @@ def build_register_modal(
         },
         {
             "type": "input",
+            "block_id": "lookback_window_block",
+            "element": {
+                "type": "static_select",
+                "action_id": "lookback_window",
+                "options": _LOOKBACK_OPTIONS,
+                "initial_option": next(
+                    o for o in _LOOKBACK_OPTIONS if o["value"] == lookback_window
+                ),
+            },
+            "label": {"type": "plain_text", "text": "Observation Window"},
+            "hint": {
+                "type": "plain_text",
+                "text": "TrueDocs reads all channel messages within this window when triggered",
+            },
+        },
+        {
+            "type": "input",
             "block_id": "trigger_type_block",
             "dispatch_action": True,
             "element": radio_element,
@@ -115,17 +142,11 @@ def build_register_modal(
     if trigger_type == "manual":
         blocks.append(
             {
-                "type": "input",
+                "type": "section",
                 "block_id": "trigger_phrase_block",
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "trigger_phrase",
-                    "placeholder": {"type": "plain_text", "text": "deploying now"},
-                },
-                "label": {"type": "plain_text", "text": "Trigger Phrase"},
-                "hint": {
-                    "type": "plain_text",
-                    "text": "TrueDocs wakes up when this phrase appears in the channel",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": ":zap: *Trigger phrase:* `run-truedocs`\nType this in the channel to start a documentation check.",
                 },
             }
         )

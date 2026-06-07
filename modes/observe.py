@@ -25,9 +25,16 @@ LOOKBACK_LABELS: dict[str, str] = {
 
 
 def fetch_channel_messages(
-    client: WebClient, channel_id: str, lookback_window: str = "1d"
+    client: WebClient,
+    channel_id: str,
+    lookback_window: str = "1d",
+    exclude_thread_ts: str | None = None,
 ) -> list[dict]:
-    """Return all human messages in the channel within the lookback window, oldest first."""
+    """Return all human messages in the channel within the lookback window, oldest first.
+
+    exclude_thread_ts: skip the trigger message and any replies in its thread,
+    so the 'run-truedocs' invocation itself is not analyzed as content.
+    """
     seconds = LOOKBACK_SECONDS.get(lookback_window, LOOKBACK_SECONDS["1d"])
     oldest = str(time.time() - seconds)
 
@@ -46,7 +53,19 @@ def fetch_channel_messages(
 
     # conversations_history returns newest-first; reverse for chronological order
     all_messages.reverse()
-    return [m for m in all_messages if not m.get("bot_id") and not m.get("subtype")]
+
+    def _keep(m: dict) -> bool:
+        if m.get("bot_id") or m.get("subtype"):
+            return False
+        if exclude_thread_ts:
+            # Drop the trigger message itself and any thread children under it
+            if m.get("ts") == exclude_thread_ts:
+                return False
+            if m.get("thread_ts") == exclude_thread_ts:
+                return False
+        return True
+
+    return [m for m in all_messages if _keep(m)]
 
 
 def format_messages_for_prompt(messages: list[dict]) -> str:

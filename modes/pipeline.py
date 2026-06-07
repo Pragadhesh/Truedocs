@@ -32,8 +32,10 @@ def run_pipeline(
             text=f":mag: Scanning the last *{label}* of #{process['name']} messages against the Confluence doc...",
         )
 
-        messages = fetch_channel_messages(client, channel_id, lookback)
-        logger.info(f"Fetched {len(messages)} messages from {channel_id} (window={lookback})")
+        messages = fetch_channel_messages(
+            client, channel_id, lookback, exclude_thread_ts=thread_ts
+        )
+        logger.info(f"Fetched {len(messages)} messages from {channel_id} (window={lookback}, excluded trigger thread)")
 
         if not messages:
             client.chat_postMessage(

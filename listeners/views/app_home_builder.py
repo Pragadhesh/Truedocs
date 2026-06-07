@@ -150,8 +150,7 @@ def build_app_home_view(
 def _trigger_label(proc: dict) -> str:
     t = proc.get("trigger_type", "manual")
     if t == "manual":
-        phrase = proc.get("trigger_phrase") or ""
-        return f'Manual · `{phrase}`' if phrase else "Manual"
+        return "Manual · type `run-truedocs` in channel"
     if t == "daily":
         return f"Daily · {proc.get('trigger_time', '09:00')}"
     if t == "weekly":
