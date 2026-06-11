@@ -9,6 +9,7 @@ import db.credentials as credentials
 import db.processes as processes
 from blockkit.drift_card import build_drift_card
 from modes.diff import analyze_changes, ConfluenceFetchError
+import modes.pending as pending
 from modes.observe import fetch_channel_messages, LOOKBACK_LABELS
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ def run_pipeline(
             return
 
         try:
-            analysis = analyze_changes(messages, process["confluence_page_url"], creds)
+            analysis, _ = analyze_changes(messages, process["confluence_page_url"], creds)
         except ConfluenceFetchError as e:
             client.chat_postMessage(
                 channel=channel_id,
@@ -70,6 +71,12 @@ def run_pipeline(
             return
 
         logger.info(f"Analysis complete: has_changes={analysis.has_changes}, {len(analysis.changes)} changes")
+
+        # Store the analysis so the Approve handler can apply it to a fresh
+        # page fetch at click time, avoiding stale HTML issues.
+        if analysis.has_changes:
+            pending.put(process["id"], thread_ts, analysis)
+            logger.info("Stored analysis for process=%s thread=%s", process["id"], thread_ts)
 
         blocks = build_drift_card(process, analysis, thread_ts)
         client.chat_postMessage(

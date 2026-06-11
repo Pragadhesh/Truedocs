@@ -12,7 +12,12 @@ from .register_process import (
     handle_register_process_submission,
     handle_delete_process,
 )
-from .drift_actions import handle_approve_drift, handle_reject_drift
+from .drift_actions import (
+    handle_approve_drift,
+    handle_reject_drift,
+    handle_approve_drift_item,
+    handle_reject_drift_item,
+)
 
 
 def register(app: App):
@@ -24,3 +29,5 @@ def register(app: App):
     app.action("delete_process")(handle_delete_process)
     app.action("approve_drift")(handle_approve_drift)
     app.action("reject_drift")(handle_reject_drift)
+    app.action("approve_drift_item")(handle_approve_drift_item)
+    app.action("reject_drift_item")(handle_reject_drift_item)

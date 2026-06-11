@@ -1,7 +1,9 @@
 """Fetch channel messages and thread replies within a lookback window."""
 from __future__ import annotations
+import json
 import logging
 import time
+from pathlib import Path
 
 from slack_sdk import WebClient
 
@@ -34,8 +36,10 @@ def fetch_channel_messages(
     """Return top-level messages plus resolved Q&A thread replies, oldest first.
 
     exclude_thread_ts: skip the current trigger message and its thread.
-    exclude_phrases:   skip any message whose text exactly matches one of these
-                       (case-insensitive) — filters all past trigger invocations.
+    exclude_phrases:   skip any message whose text CONTAINS one of these
+                       phrases (case-insensitive substring match, consistent
+                       with trigger detection) — filters all past trigger
+                       invocations regardless of surrounding text.
     Each reply dict has _is_thread_reply=True and _parent_text set.
     """
     seconds = LOOKBACK_SECONDS.get(lookback_window, LOOKBACK_SECONDS["1d"])
@@ -64,7 +68,14 @@ def fetch_channel_messages(
     # newest-first → oldest-first
     all_messages.reverse()
 
-    _excluded_lower = [p.lower().strip() for p in (exclude_phrases or [])]
+    # Normalise trigger phrases once; use substring match (same logic as
+    # _check_trigger) so "hey run-truedocs please" is excluded just like
+    # an exact "run-truedocs" message.
+    _excluded_phrases = [p.lower().strip() for p in (exclude_phrases or []) if p.strip()]
+
+    def _contains_trigger(text: str) -> bool:
+        t = text.lower()
+        return any(phrase in t for phrase in _excluded_phrases)
 
     def _keep_top_level(m: dict) -> bool:
         if m.get("bot_id") or m.get("subtype"):
@@ -74,22 +85,55 @@ def fetch_channel_messages(
                 return False
             if m.get("thread_ts") == exclude_thread_ts:
                 return False
-        if _excluded_lower:
-            if (m.get("text") or "").lower().strip() in _excluded_lower:
-                return False
+        if _excluded_phrases and _contains_trigger(m.get("text") or ""):
+            return False
         return True
 
     kept = [m for m in all_messages if _keep_top_level(m)]
-    logger.info("Fetched %d top-level messages from %s (window=%s)", len(kept), channel_id, lookback_window)
+    logger.info(
+        "Fetched %d top-level messages from %s (window=%s, oldest=%s)",
+        len(kept), channel_id, lookback_window, oldest,
+    )
 
-    # Fetch replies for threads that have them (Q&A detection)
+    # Fetch replies for threads that have them (Q&A detection).
+    # Pass oldest so replies are bounded to the same lookback window and
+    # paginated so large threads don't silently truncate at 50 replies.
     result_messages: list[dict] = []
     for m in kept:
         result_messages.append(m)
         if m.get("reply_count", 0) > 0:
-            _append_thread_replies(client, channel_id, m, result_messages, _excluded_lower)
+            _append_thread_replies(
+                client, channel_id, m, result_messages, _excluded_phrases, oldest
+            )
 
+    _save_debug_snapshot(channel_id, lookback_window, oldest, result_messages)
     return result_messages
+
+
+def _save_debug_snapshot(
+    channel_id: str,
+    lookback_window: str,
+    oldest: str,
+    messages: list[dict],
+) -> None:
+    """Write the fetched message list to data/debug_messages.json.
+
+    Overwrites the file on every run so there is always exactly one snapshot
+    to inspect.  The file is in data/ which is gitignored.
+    """
+    data_dir = Path(__file__).parent.parent / "data"
+    data_dir.mkdir(exist_ok=True)
+    snapshot = {
+        "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "channel_id": channel_id,
+        "lookback_window": lookback_window,
+        "oldest_ts": oldest,
+        "message_count": len(messages),
+        "messages": messages,
+    }
+    path = data_dir / "debug_messages.json"
+    path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("Debug snapshot saved → %s (%d messages)", path, len(messages))
 
 
 def _append_thread_replies(
@@ -97,26 +141,52 @@ def _append_thread_replies(
     channel_id: str,
     parent: dict,
     out: list[dict],
-    excluded_lower: list[str],
+    excluded_phrases: list[str],
+    oldest: str,
 ) -> None:
-    """Fetch replies for a thread and append them to out (excluding bots and trigger phrases)."""
+    """Fetch replies within the lookback window and append to out.
+
+    Paginates conversations_replies with oldest= so only replies inside the
+    scan window are returned, and large threads (>50 replies) are fully
+    consumed rather than silently truncated.
+    """
+    parent_text = (parent.get("text") or "").strip()
+    all_replies: list[dict] = []
+    cursor = None
     try:
-        result = client.conversations_replies(
-            channel=channel_id,
-            ts=parent["ts"],
-            limit=50,
-        )
-        replies = result.get("messages", [])
+        while True:
+            kwargs: dict = {
+                "channel": channel_id,
+                "ts": parent["ts"],
+                "oldest": oldest,
+                "limit": 50,
+            }
+            if cursor:
+                kwargs["cursor"] = cursor
+            result = client.conversations_replies(**kwargs)
+            if not result.get("ok"):
+                logger.warning(
+                    "conversations_replies failed for %s: %s",
+                    parent["ts"], result.get("error"),
+                )
+                return
+            all_replies.extend(result.get("messages", []))
+            cursor = result.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
     except Exception as e:
         logger.warning("Could not fetch thread replies for %s: %s", parent["ts"], e)
         return
 
-    parent_text = (parent.get("text") or "").strip()
-    for reply in replies[1:]:  # skip index 0 — it's the parent message
+    for reply in all_replies:
+        # conversations_replies includes the parent as the first message even
+        # with oldest=; skip it by comparing ts.
+        if reply.get("ts") == parent["ts"]:
+            continue
         if reply.get("bot_id") or reply.get("subtype"):
             continue
-        text_lower = (reply.get("text") or "").lower().strip()
-        if text_lower in excluded_lower:
+        reply_text = (reply.get("text") or "").lower()
+        if excluded_phrases and any(phrase in reply_text for phrase in excluded_phrases):
             continue
         enriched = dict(reply)
         enriched["_is_thread_reply"] = True

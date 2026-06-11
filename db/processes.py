@@ -40,6 +40,7 @@ def create(
     trigger_phrase: str | None,
     trigger_time: str | None,
     trigger_day: str | None,
+    lookback_window: str,
     created_by: str,
 ) -> dict:
     store = _load()
@@ -53,6 +54,7 @@ def create(
         "trigger_phrase": trigger_phrase or "",
         "trigger_time": trigger_time or "",
         "trigger_day": trigger_day or "",
+        "lookback_window": lookback_window,
         "created_by": created_by,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "last_observed_at": "",

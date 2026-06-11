@@ -16,7 +16,7 @@ _CONFIDENCE_LABEL = {
 }
 
 
-def _change_block(i: int, c: ChangeItem) -> dict:
+def _change_blocks(idx: int, c: ChangeItem, process_id: str, thread_ts: str) -> list[dict]:
     type_icon = _TYPE_ICON.get(c.change_type, ":pencil2:")
     temp_badge = " _(temporary)_" if c.is_temporary else ""
     confidence_note = _CONFIDENCE_LABEL.get(c.confidence, "")
@@ -29,14 +29,47 @@ def _change_block(i: int, c: ChangeItem) -> dict:
         clarification = f"\n:question: *Needs clarification:* {c.clarification_note}"
 
     text = (
-        f"{type_icon} *{i}. {c.section}*{temp_badge}{confidence_note}\n"
+        f"{type_icon} *{idx + 1}. {c.section}*{temp_badge}{confidence_note}\n"
         f":page_facing_up: *Currently says:* {c.current_doc_value}\n"
         f":arrow_right: *Proposed update:* {c.proposed_value}{when}{clarification}"
     )
     if evidence:
         text += f"\n:speech_balloon: *Evidence:*\n{evidence}"
 
-    return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
+    blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
+
+    if c.status == "approved":
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": ":white_check_mark: *Applied to Confluence*"}],
+        })
+    elif c.status == "rejected":
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": ":no_entry_sign: *Rejected — doc unchanged*"}],
+        })
+    else:
+        blocks.append({
+            "type": "actions",
+            "block_id": f"drift_item_{idx}",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Approve"},
+                    "action_id": "approve_drift_item",
+                    "style": "primary",
+                    "value": f"{process_id}|{thread_ts}|{idx}",
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Reject"},
+                    "action_id": "reject_drift_item",
+                    "value": f"{process_id}|{thread_ts}|{idx}",
+                },
+            ],
+        })
+
+    return blocks
 
 
 def build_drift_card(process: dict, analysis: ChangeAnalysis, thread_ts: str) -> list[dict]:
@@ -75,40 +108,8 @@ def build_drift_card(process: dict, analysis: ChangeAnalysis, thread_ts: str) ->
         {"type": "divider"},
     ]
 
-    for i, change in enumerate(analysis.changes, 1):
-        blocks.append(_change_block(i, change))
-
-    blocks.extend([
-        {"type": "divider"},
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": (
-                    ":white_check_mark: *Approve* — TrueDocs updates the Confluence page with all proposed changes.\n"
-                    ":no_entry_sign: *Reject* — Leave the doc unchanged."
-                ),
-            },
-        },
-        {
-            "type": "actions",
-            "block_id": "drift_actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Approve & Update Confluence"},
-                    "action_id": "approve_drift",
-                    "style": "primary",
-                    "value": f"{process['id']}|{thread_ts}",
-                },
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "Reject"},
-                    "action_id": "reject_drift",
-                    "value": f"{process['id']}|{thread_ts}",
-                },
-            ],
-        },
-    ])
+    for idx, change in enumerate(analysis.changes):
+        blocks.extend(_change_blocks(idx, change, process["id"], thread_ts))
+        blocks.append({"type": "divider"})
 
     return blocks
