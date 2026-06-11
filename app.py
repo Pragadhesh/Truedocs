@@ -12,7 +12,7 @@ from listeners import register_listeners
 load_dotenv(dotenv_path=".env", override=False)
 get_model()  # Fail fast if no AI provider key is configured
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 app = App(
     token=os.environ.get("SLACK_BOT_TOKEN"),

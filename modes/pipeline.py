@@ -78,12 +78,12 @@ def run_pipeline(
             pending.put(process["id"], thread_ts, analysis)
             logger.info("Stored analysis for process=%s thread=%s", process["id"], thread_ts)
 
-        blocks = build_drift_card(process, analysis, thread_ts)
+        card = build_drift_card(process, analysis, thread_ts)
         client.chat_postMessage(
             channel=channel_id,
             thread_ts=thread_ts,
             text=f"TrueDocs — *{process['name']}* documentation check",
-            blocks=blocks,
+            **card,
         )
 
         processes.update(

@@ -9,6 +9,12 @@
         "description": "Register and manage TrueDocs processes",
         "usage_hint": "register",
         "should_escape": false
+      },
+      {
+        "command": "/truedocs-run",
+        "description": "Scan this channel against Confluence and post a drift card",
+        "usage_hint": "",
+        "should_escape": false
       }
     ],
     "assistant_view": {

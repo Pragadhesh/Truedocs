@@ -84,12 +84,12 @@ def handle_approve_drift_item(ack, body: dict, client: WebClient, logger: Logger
             else:
                 pending.put(process_id, thread_ts, analysis)
 
-            blocks = build_drift_card(proc, analysis, thread_ts)
+            card = build_drift_card(proc, analysis, thread_ts)
             client.chat_update(
                 channel=channel_id,
                 ts=message_ts,
-                blocks=blocks,
                 text=f"TrueDocs — {proc['name']}",
+                **card,
             )
         else:
             client.chat_postMessage(
