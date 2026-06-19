@@ -36,7 +36,7 @@ class ConfluenceClient:
             r = httpx.get(
                 f"{self.base_url}/api/v2/pages/{page_id}",
                 params={"body-format": "storage"},
-                headers=self._headers,
+                headers={**self._headers, "Cache-Control": "no-cache"},
                 timeout=5,
             )
             return r.json() if r.status_code == 200 else None
@@ -51,7 +51,7 @@ class ConfluenceClient:
         try:
             r = httpx.get(
                 f"{self.base_url}/api/v2/pages/{page_id}",
-                headers=self._headers,
+                headers={**self._headers, "Cache-Control": "no-cache"},
                 timeout=10,
             )
             if r.status_code != 200:

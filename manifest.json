@@ -13,7 +13,7 @@
       {
         "command": "/truedocs-run",
         "description": "Scan this channel against Confluence and post a drift card",
-        "usage_hint": "",
+        "usage_hint": "run truedocs agent",
         "should_escape": false
       }
     ],

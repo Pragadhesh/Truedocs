@@ -130,12 +130,12 @@ def handle_reject_drift_item(ack, body: dict, client: WebClient, logger: Logger)
 
     proc = _get_proc(workspace_id, process_id)
     if proc:
-        blocks = build_drift_card(proc, analysis, thread_ts)
+        card = build_drift_card(proc, analysis, thread_ts)
         client.chat_update(
             channel=channel_id,
             ts=message_ts,
-            blocks=blocks,
             text=f"TrueDocs — {proc['name']}",
+            **card,
         )
 
 
