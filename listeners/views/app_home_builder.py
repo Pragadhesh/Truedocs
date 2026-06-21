@@ -1,3 +1,30 @@
+def _relative_time(iso_str: str) -> str:
+    """Convert a UTC ISO timestamp to a human-readable relative string."""
+    from datetime import datetime, timezone
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        seconds = int((now - dt).total_seconds())
+        if seconds < 60:
+            return "just now"
+        if seconds < 3600:
+            m = seconds // 60
+            return f"{m} minute{'s' if m != 1 else ''} ago"
+        if seconds < 86400:
+            h = seconds // 3600
+            return f"{h} hour{'s' if h != 1 else ''} ago"
+        if seconds < 86400 * 2:
+            return "yesterday"
+        if seconds < 86400 * 7:
+            d = seconds // 86400
+            return f"{d} days ago"
+        return dt.strftime(f"%b {dt.day}")
+    except Exception:
+        return iso_str[:10]
+
+
 def build_app_home_view(
     install_url: str | None = None,
     is_connected: bool = False,
@@ -90,10 +117,10 @@ def build_app_home_view(
                 last_seen = proc.get("last_observed_at") or ""
                 drift = proc.get("drift_detected", False)
                 status_line = (
-                    f"Last observed: {last_seen[:10]}  ·  "
+                    f"Last scanned: {_relative_time(last_seen)}  ·  "
                     f"{'Drift found :rotating_light:' if drift else 'No drift :white_check_mark:'}"
                     if last_seen
-                    else "_Never observed_"
+                    else "_Never scanned_"
                 )
 
                 blocks.append({
