@@ -1,34 +1,28 @@
-"""File-backed process registry per workspace.
-
-Persisted to data/processes.json so registered processes survive app restarts.
-"""
-
+"""SQLite-backed process registry per workspace."""
 from __future__ import annotations
-import json
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
-_DATA_DIR = Path(__file__).parent.parent / "data"
-_PROCS_FILE = _DATA_DIR / "processes.json"
+from db.database import connect
 
 
-def _load() -> dict[str, list[dict]]:
-    if not _PROCS_FILE.exists():
-        return {}
-    try:
-        return json.loads(_PROCS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def _save(store: dict[str, list[dict]]) -> None:
-    _DATA_DIR.mkdir(exist_ok=True)
-    _PROCS_FILE.write_text(json.dumps(store, indent=2), encoding="utf-8")
+def _row_to_dict(row) -> dict:
+    d = dict(row)
+    d["drift_detected"]   = bool(d.get("drift_detected", 0))
+    d["trigger_phrase"]   = d.get("trigger_phrase")   or ""
+    d["trigger_time"]     = d.get("trigger_time")     or ""
+    d["trigger_day"]      = d.get("trigger_day")      or ""
+    d["last_observed_at"] = d.get("last_observed_at") or ""
+    return d
 
 
 def list_by_workspace(workspace_id: str) -> list[dict]:
-    return list(_load().get(workspace_id, []))
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM processes WHERE workspace_id = ? ORDER BY created_at ASC",
+            (workspace_id,),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
 def create(
@@ -43,8 +37,8 @@ def create(
     lookback_window: str,
     created_by: str,
 ) -> dict:
-    store = _load()
-    item: dict = {
+    now = datetime.now(timezone.utc).isoformat()
+    item = {
         "id": str(uuid.uuid4()),
         "workspace_id": workspace_id,
         "name": name,
@@ -56,31 +50,42 @@ def create(
         "trigger_day": trigger_day or "",
         "lookback_window": lookback_window,
         "created_by": created_by,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now,
         "last_observed_at": "",
         "drift_detected": False,
     }
-    store.setdefault(workspace_id, []).append(item)
-    _save(store)
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO processes
+                (id, workspace_id, name, channel_id, confluence_page_url,
+                 trigger_type, trigger_phrase, trigger_time, trigger_day,
+                 lookback_window, created_by, created_at, last_observed_at, drift_detected)
+            VALUES
+                (:id, :workspace_id, :name, :channel_id, :confluence_page_url,
+                 :trigger_type, :trigger_phrase, :trigger_time, :trigger_day,
+                 :lookback_window, :created_by, :created_at, :last_observed_at, :drift_detected)
+            """,
+            {**item, "drift_detected": int(item["drift_detected"])},
+        )
     return item
 
 
 def update(process_id: str, **fields) -> dict | None:
-    store = _load()
-    for procs in store.values():
-        for i, p in enumerate(procs):
-            if p["id"] == process_id:
-                procs[i] = {**p, **fields}
-                _save(store)
-                return procs[i]
-    return None
+    if not fields:
+        return None
+    if "drift_detected" in fields:
+        fields = {**fields, "drift_detected": int(fields["drift_detected"])}
+    set_clause = ", ".join(f"{k} = :{k}" for k in fields)
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE processes SET {set_clause} WHERE id = :_id",
+            {**fields, "_id": process_id},
+        )
+        row = conn.execute("SELECT * FROM processes WHERE id = ?", (process_id,)).fetchone()
+    return _row_to_dict(row) if row else None
 
 
 def delete(process_id: str) -> None:
-    store = _load()
-    for procs in store.values():
-        for i, p in enumerate(procs):
-            if p["id"] == process_id:
-                procs.pop(i)
-                _save(store)
-                return
+    with connect() as conn:
+        conn.execute("DELETE FROM processes WHERE id = ?", (process_id,))

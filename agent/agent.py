@@ -25,7 +25,7 @@ def get_model() -> str:
     if os.environ.get("ANTHROPIC_API_KEY"):
         _cached_model = "anthropic:claude-sonnet-4-6"
     elif os.environ.get("OPENAI_API_KEY"):
-        _cached_model = "openai:gpt-4.1"
+        _cached_model = "openai:gpt-4.1-mini"
     else:
         raise RuntimeError(
             "No AI provider configured. "

@@ -1,63 +1,48 @@
-"""File-backed Confluence credentials per workspace.
+"""SQLite-backed Confluence credentials per workspace.
 
-Persisted to data/credentials.json so they survive app restarts.
+Tokens are encrypted at rest using Fernet (ENCRYPTION_KEY env var).
 Falls back to CONFLUENCE_EMAIL / CONFLUENCE_API_TOKEN env vars on first access.
 """
-
 from __future__ import annotations
-import json
 import os
-from pathlib import Path
+from datetime import datetime, timezone
 
-_DATA_DIR = Path(__file__).parent.parent / "data"
-_CREDS_FILE = _DATA_DIR / "credentials.json"
-
-
-def _load() -> dict[str, dict]:
-    if not _CREDS_FILE.exists():
-        return {}
-    try:
-        return json.loads(_CREDS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def _save(store: dict[str, dict]) -> None:
-    _DATA_DIR.mkdir(exist_ok=True)
-    _CREDS_FILE.write_text(json.dumps(store, indent=2), encoding="utf-8")
+from db.crypto import encrypt, decrypt
+from db.database import connect
 
 
 def get(workspace_id: str) -> dict | None:
-    store = _load()
-    if workspace_id not in store:
-        seeded = _from_env(workspace_id)
-        if seeded:
-            store[workspace_id] = seeded
-            _save(store)
-    return store.get(workspace_id)
-
-
-def upsert(
-    workspace_id: str,
-    confluence_email: str,
-    confluence_token: str,
-) -> None:
-    store = _load()
-    store[workspace_id] = {
-        "id": workspace_id,
-        "confluence_email": confluence_email,
-        "confluence_token": confluence_token,
-    }
-    _save(store)
-
-
-def _from_env(workspace_id: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT confluence_email, confluence_token_enc FROM credentials WHERE workspace_id = ?",
+            (workspace_id,),
+        ).fetchone()
+    if row:
+        return {
+            "id": workspace_id,
+            "confluence_email": row["confluence_email"],
+            "confluence_token": decrypt(row["confluence_token_enc"]),
+        }
+    # Seed from env vars if present (single-workspace / dev setup)
     email = os.environ.get("CONFLUENCE_EMAIL", "").strip()
     token = os.environ.get("CONFLUENCE_API_TOKEN", "").strip()
     if email and token:
-        return {
-            "id": workspace_id,
-            "confluence_email": email,
-            "confluence_token": token,
-        }
+        upsert(workspace_id, email, token)
+        return {"id": workspace_id, "confluence_email": email, "confluence_token": token}
     return None
+
+
+def upsert(workspace_id: str, confluence_email: str, confluence_token: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO credentials (workspace_id, confluence_email, confluence_token_enc, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(workspace_id) DO UPDATE SET
+                confluence_email     = excluded.confluence_email,
+                confluence_token_enc = excluded.confluence_token_enc,
+                updated_at           = excluded.updated_at
+            """,
+            (workspace_id, confluence_email, encrypt(confluence_token), now),
+        )
