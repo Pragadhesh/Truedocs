@@ -146,7 +146,7 @@ def build_register_modal(
                 "block_id": "trigger_phrase_block",
                 "text": {
                     "type": "mrkdwn",
-                    "text": ":zap: *Trigger phrase:* `run-truedocs`\nType this in the channel to start a documentation check.",
+                    "text": ":zap: *Trigger:* Use `/truedocs-scan` in this channel to run a documentation check.",
                 },
             }
         )

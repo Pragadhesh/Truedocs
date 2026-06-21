@@ -56,7 +56,7 @@ def run_pipeline(
             client.chat_postMessage(
                 channel=channel_id,
                 thread_ts=thread_ts,
-                text=":warning: Confluence credentials not configured. Go to App Home → Step 1.",
+                text=":warning: Confluence credentials not configured. Go to App Home → Confluence Setup.",
             )
             return
 

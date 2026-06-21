@@ -48,7 +48,7 @@ def handle_approve_drift_item(ack, body: dict, client: WebClient, logger: Logger
         client.chat_postMessage(
             channel=channel_id,
             thread_ts=thread_ts,
-            text=":warning: The pending update has expired (app may have restarted). Run `run-truedocs` again.",
+            text=":warning: The pending update has expired (app may have restarted). Run `/truedocs-scan` again.",
         )
         return
 
@@ -165,7 +165,7 @@ def handle_approve_drift(ack, body: dict, client: WebClient, logger: Logger):
             thread_ts=thread_ts,
             text=(
                 ":warning: The pending update has expired (app may have restarted). "
-                "Please run `run-truedocs` again to generate a fresh drift card."
+                "Please run `/truedocs-scan` again to generate a fresh drift card."
             ),
         )
         return

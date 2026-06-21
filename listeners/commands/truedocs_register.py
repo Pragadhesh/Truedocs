@@ -5,16 +5,9 @@ import threading
 from slack_sdk import WebClient
 
 import db.processes as processes
-from listeners.views.register_modal import build_register_modal
 from modes.pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
-
-
-def handle_truedocs_command(ack, body: dict, client: WebClient):
-    """/truedocs — open the register/manage modal."""
-    ack()
-    client.views_open(trigger_id=body["trigger_id"], view=build_register_modal())
 
 
 def handle_truedocs_scan_command(ack, body: dict, client: WebClient):

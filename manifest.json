@@ -5,15 +5,9 @@
   "features": {
     "slash_commands": [
       {
-        "command": "/truedocs",
-        "description": "Register and manage a Confluence page for this channel",
-        "usage_hint": "",
-        "should_escape": false
-      },
-      {
         "command": "/truedocs-scan",
         "description": "Scan this channel for doc drift against the registered Confluence page",
-        "usage_hint": "",
+        "usage_hint": "[run drift detection on this channel's registered page]",
         "should_escape": false
       },
       {
@@ -25,7 +19,12 @@
     ],
     "assistant_view": {
       "assistant_description": "I keep your runbooks honest — I watch Slack and tell you when your docs drift from reality.",
-      "suggested_prompts": []
+      "suggested_prompts": [
+        {
+          "title": "Check for undocumented changes",
+          "message": "The documentation may not cover this yet — check if recent Slack messages have the answer."
+        }
+      ]
     },
     "app_home": {
       "home_tab_enabled": true,

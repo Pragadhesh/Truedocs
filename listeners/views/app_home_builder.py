@@ -46,10 +46,10 @@ def build_app_home_view(
         {"type": "divider"},
     ]
 
-    # ── Step 1: Confluence Setup ────────────────────────────────────────────
+    # ── Confluence Setup ────────────────────────────────────────────────────
     blocks.append({
         "type": "section",
-        "text": {"type": "mrkdwn", "text": "*Step 1 — Confluence Setup*"},
+        "text": {"type": "mrkdwn", "text": "*Confluence Setup*"},
     })
 
     if creds:
@@ -82,10 +82,10 @@ def build_app_home_view(
 
     blocks.append({"type": "divider"})
 
-    # ── Step 2: Registered Processes (only shown after Confluence is set) ───
+    # ── Registered Processes (only shown after Confluence is set) ──────────
     blocks.append({
         "type": "section",
-        "text": {"type": "mrkdwn", "text": "*Step 2 — Registered Processes*"},
+        "text": {"type": "mrkdwn", "text": "*Registered Processes*"},
     })
 
     if not creds:
@@ -177,7 +177,7 @@ def build_app_home_view(
 def _trigger_label(proc: dict) -> str:
     t = proc.get("trigger_type", "manual")
     if t == "manual":
-        return "Manual · type `run-truedocs` in channel"
+        return "Manual · use `/truedocs-scan` in channel"
     if t == "daily":
         return f"Daily · {proc.get('trigger_time', '09:00')}"
     if t == "weekly":

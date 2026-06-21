@@ -8,19 +8,28 @@ import db.processes as processes
 from integrations.confluence import ConfluenceClient
 from listeners.views.register_modal import build_register_modal
 from listeners.views.app_home_builder import build_app_home_view
+from listeners.slack_utils import is_workspace_admin, deny_non_admin
 
 logger = logging.getLogger(__name__)
 
 
 def handle_open_register_modal(ack, body: dict, client: WebClient):
-    """Open a blank Register a Process modal (from App Home button)."""
+    """Open a blank Register a Process modal — admin only."""
     ack()
+    user_id = body["user"]["id"]
+    if not is_workspace_admin(client, user_id):
+        deny_non_admin(client, user_id)
+        return
     client.views_open(trigger_id=body["trigger_id"], view=build_register_modal())
 
 
 def handle_edit_process(ack, body: dict, client: WebClient):
-    """Open the Register modal pre-filled with an existing process's values."""
+    """Open the Register modal pre-filled with an existing process's values — admin only."""
     ack()
+    user_id = body["user"]["id"]
+    if not is_workspace_admin(client, user_id):
+        deny_non_admin(client, user_id)
+        return
     process_id = body["actions"][0]["value"]
     workspace_id = body["team"]["id"]
 
@@ -66,7 +75,13 @@ def handle_trigger_type_change(ack, body: dict, client: WebClient):
 def handle_register_process_submission(
     ack, body: dict, view: dict, client: WebClient, logger: Logger
 ):
-    """Validate inputs, then create or update a process, refresh App Home."""
+    """Validate inputs, then create or update a process — admin only."""
+    user_id = body["user"]["id"]
+    if not is_workspace_admin(client, user_id):
+        ack()
+        deny_non_admin(client, user_id)
+        return
+
     vals = view["state"]["values"]
 
     process_name = vals["process_name_block"]["process_name"]["value"].strip()
@@ -104,7 +119,7 @@ def handle_register_process_submission(
         creds = credentials.get(workspace_id)
         if not creds:
             errors["confluence_page_url_block"] = (
-                "Confluence credentials not configured. Set them up in Step 1 first."
+                "Confluence credentials not configured. Set them up in App Home first."
             )
         else:
             try:
@@ -191,11 +206,14 @@ def handle_register_process_submission(
 
 
 def handle_delete_process(ack, body: dict, client: WebClient, logger: Logger):
-    """Delete a process and refresh App Home."""
+    """Delete a process — admin only."""
     ack()
+    user_id = body["user"]["id"]
+    if not is_workspace_admin(client, user_id):
+        deny_non_admin(client, user_id)
+        return
     process_id = body["actions"][0]["value"]
     workspace_id = body["team"]["id"]
-    user_id = body["user"]["id"]
     try:
         processes.delete(process_id)
     except Exception as e:
