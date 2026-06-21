@@ -91,6 +91,16 @@ def handle_register_process_submission(
         )
 
     if not errors:
+        # Enforce one process per channel — block duplicate registrations
+        existing = processes.get_by_channel(workspace_id, channel_id)
+        current_id = view.get("private_metadata", "").strip() or None
+        if existing and existing["id"] != current_id:
+            errors["channel_block"] = (
+                f"#{channel_id} is already registered to '{existing['name']}'. "
+                "Each channel can have only one process."
+            )
+
+    if not errors:
         creds = credentials.get(workspace_id)
         if not creds:
             errors["confluence_page_url_block"] = (

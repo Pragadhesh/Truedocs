@@ -6,14 +6,8 @@
     "slash_commands": [
       {
         "command": "/truedocs",
-        "description": "Register and manage TrueDocs processes",
-        "usage_hint": "register",
-        "should_escape": false
-      },
-      {
-        "command": "/truedocs-run",
-        "description": "Scan this channel against Confluence and post a drift card",
-        "usage_hint": "run truedocs agent",
+        "description": "Keep your Confluence docs in sync with Slack — register, scan, and ask questions",
+        "usage_hint": "register | scan | ask <question> | help",
         "should_escape": false
       }
     ],

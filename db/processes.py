@@ -16,6 +16,16 @@ def _row_to_dict(row) -> dict:
     return d
 
 
+def get_by_channel(workspace_id: str, channel_id: str) -> dict | None:
+    """Return the process registered for a channel, or None."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM processes WHERE workspace_id = ? AND channel_id = ?",
+            (workspace_id, channel_id),
+        ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
 def list_by_workspace(workspace_id: str) -> list[dict]:
     with connect() as conn:
         rows = conn.execute(
