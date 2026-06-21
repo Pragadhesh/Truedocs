@@ -6,8 +6,20 @@
     "slash_commands": [
       {
         "command": "/truedocs",
-        "description": "Keep your Confluence docs in sync with Slack — register, scan, and ask questions",
-        "usage_hint": "register | scan | ask <question> | help",
+        "description": "Register and manage a Confluence page for this channel",
+        "usage_hint": "",
+        "should_escape": false
+      },
+      {
+        "command": "/truedocs-scan",
+        "description": "Scan this channel for doc drift against the registered Confluence page",
+        "usage_hint": "",
+        "should_escape": false
+      },
+      {
+        "command": "/truedocs-ask",
+        "description": "Ask a question answered directly from your Confluence documentation",
+        "usage_hint": "your question here",
         "should_escape": false
       }
     ],

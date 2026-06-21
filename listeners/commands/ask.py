@@ -1,4 +1,4 @@
-"""Q&A against the channel's registered Confluence page (/truedocs ask)."""
+"""Handler for /truedocs-ask — answer questions from the channel's Confluence page."""
 from __future__ import annotations
 import logging
 import threading
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 _ask_agent = Agent(system_prompt=ASK_PROMPT)
 
 
-def handle_ask_body(ack, body: dict, client: WebClient):
-    """Shared handler used by both the legacy /ask route and /truedocs ask."""
+def handle_truedocs_ask_command(ack, body: dict, client: WebClient):
+    """/truedocs-ask <question> — answer from the registered Confluence page."""
     ack()
 
     question = (body.get("text") or "").strip()
@@ -30,7 +30,7 @@ def handle_ask_body(ack, body: dict, client: WebClient):
         client.chat_postEphemeral(
             channel=channel_id,
             user=user_id,
-            text=":information_source: Usage: `/truedocs ask <your question>` — I'll search your registered Confluence page for the answer.",
+            text=":information_source: Usage: `/truedocs-ask <your question>`",
         )
         return
 
@@ -41,7 +41,7 @@ def handle_ask_body(ack, body: dict, client: WebClient):
             user=user_id,
             text=(
                 ":warning: No documentation page is registered for this channel. "
-                "Use `/truedocs register` to connect a Confluence page to this channel first."
+                "Use `/truedocs` to connect a Confluence page first."
             ),
         )
         return
@@ -72,7 +72,7 @@ def _run_ask(
         client.chat_postMessage(
             channel=channel_id,
             thread_ts=thread_ts,
-            text=":warning: Confluence credentials not configured. Go to App Home → Step 1.",
+            text=":warning: Confluence credentials not configured. Go to App Home to set them up.",
         )
         return
 
@@ -115,8 +115,8 @@ def _run_ask(
             thread_ts=thread_ts,
             text=(
                 f":mag: I searched *{proc['name']}* but couldn't find an answer.\n"
-                f"The documentation may not cover this yet — consider updating the doc, "
-                f"or run `/truedocs scan` to check if recent Slack messages have the answer."
+                f"The documentation may not cover this yet — run `/truedocs-scan` "
+                f"to check if recent Slack messages have the answer."
             ),
         )
     else:
