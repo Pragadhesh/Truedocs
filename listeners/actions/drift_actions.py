@@ -88,7 +88,7 @@ def handle_approve_drift_item(ack, body: dict, client: WebClient, logger: Logger
             client.chat_update(
                 channel=channel_id,
                 ts=message_ts,
-                text=f"TrueDocs — {proc['name']}",
+                text="TrueDocs",
                 **card,
             )
         else:
@@ -134,7 +134,7 @@ def handle_reject_drift_item(ack, body: dict, client: WebClient, logger: Logger)
         client.chat_update(
             channel=channel_id,
             ts=message_ts,
-            text=f"TrueDocs — {proc['name']}",
+            text="TrueDocs",
             **card,
         )
 

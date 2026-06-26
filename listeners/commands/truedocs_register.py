@@ -36,7 +36,7 @@ def handle_truedocs_scan_command(ack, body: dict, client: WebClient):
     for proc in channel_procs:
         result = client.chat_postMessage(
             channel=channel_id,
-            text=f":mag: <@{user_id}> triggered a TrueDocs scan for *{proc['name']}*",
+            text=f":mag: <@{user_id}> triggered a TrueDocs scan",
         )
         thread_ts = result["ts"]
         threading.Thread(

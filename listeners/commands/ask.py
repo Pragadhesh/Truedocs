@@ -48,7 +48,7 @@ def handle_truedocs_ask_command(ack, body: dict, client: WebClient):
 
     result = client.chat_postMessage(
         channel=channel_id,
-        text=f":books: <@{user_id}> asked: _{question}_\n:hourglass: Searching *{proc['name']}*...",
+        text=f":books: <@{user_id}> asked: _{question}_\n:hourglass: Searching documentation...",
     )
     thread_ts = result["ts"]
 
@@ -114,14 +114,14 @@ def _run_ask(
             channel=channel_id,
             thread_ts=thread_ts,
             text=(
-                f":mag: I searched *{proc['name']}* but couldn't find an answer.\n"
-                f"The documentation may not cover this yet — run `/truedocs-scan` "
-                f"to check if recent Slack messages have the answer."
+                ":mag: I couldn't find an answer in the documentation.\n"
+                "The documentation may not cover this yet — run `/truedocs-scan` "
+                "to check if recent Slack messages have the answer."
             ),
         )
     else:
         client.chat_postMessage(
             channel=channel_id,
             thread_ts=thread_ts,
-            text=f"{answer}\n\n_Source: <{proc['confluence_page_url']}|{proc['name']}>_",
+            text=f"{answer}\n\n_Source: <{proc['confluence_page_url']}|View documentation>_",
         )
