@@ -2,7 +2,11 @@ import logging
 import os
 
 from pydantic_ai import Agent
-from pydantic_ai.mcp import MCPServerStreamableHTTP
+
+try:
+    from pydantic_ai.mcp import MCPServerStreamableHTTP as _MCPServerStreamableHTTP
+except ImportError:
+    _MCPServerStreamableHTTP = None
 
 from agent.deps import AgentDeps
 from agent.tools import add_emoji_reaction
@@ -46,14 +50,16 @@ agent = Agent(
 def run_agent(text, deps, message_history=None):
     """Run the agent, optionally connecting to the Slack MCP server."""
     toolsets = []
-    if deps.user_token:
+    if deps.user_token and _MCPServerStreamableHTTP is not None:
         logger.info("Slack MCP Server enabled (user_token present)")
         toolsets.append(
-            MCPServerStreamableHTTP(
+            _MCPServerStreamableHTTP(
                 SLACK_MCP_URL,
                 headers={"Authorization": f"Bearer {deps.user_token}"},
             )
         )
+    elif deps.user_token:
+        logger.warning("Slack MCP Server disabled (MCPServerStreamableHTTP not available in this pydantic-ai version)")
     else:
         logger.info("Slack MCP Server disabled (no user_token)")
 
