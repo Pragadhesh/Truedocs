@@ -1,0 +1,6 @@
+services:
+  truedocs:
+    build: .
+    restart: always
+    env_file:
+      - .env

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env*
+data/
+logs/
+*.log
+.git/
+.claude/
+images/
+fix_db_url.py
+test_db.py
