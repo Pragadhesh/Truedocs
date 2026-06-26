@@ -34,7 +34,7 @@ def build_app_home_view(
     blocks: list[dict] = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "TrueDocs"},
+            "text": {"type": "plain_text", "text": "Truedocs"},
         },
         {
             "type": "section",
