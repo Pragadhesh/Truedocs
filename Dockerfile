@@ -4,10 +4,7 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-COPY pyproject.toml ./
-RUN uv sync --no-dev --no-install-project
-
 COPY . .
-RUN uv sync --no-dev
+RUN uv pip install --system --no-cache .
 
-CMD ["uv", "run", "python", "app.py"]
+CMD ["python", "app.py"]
