@@ -63,6 +63,8 @@ Four change types:
 
 ![TrueDocs System Architecture](https://raw.githubusercontent.com/Pragadhesh/Truedocs/master/images/architecture.png)
 
+Slack sits on the left as the event source. The TrueDocs Agent is the central hub — it orchestrates everything. On the right, it fans out to three services: **Claude Sonnet 4.6** for semantic drift detection, **Confluence** for live page reads and targeted updates, and **Supabase** for storing credentials, process configs, and workspace installations. All connections are bidirectional — the agent sends requests and processes structured responses from each service independently.
+
 ### Tech stack
 
 | Layer | Technology |
@@ -73,7 +75,8 @@ Four change types:
 | MCP integration | `pydantic_ai.mcp.MCPServerStreamableHTTP` — tool use over MCP protocol |
 | Documentation | Confluence REST API v2 — `GET` for page content, `PUT` for targeted updates |
 | Page patching | Deterministic anchor-based replacement on Confluence Storage Format (XML/HTML) |
-| OAuth | Flask + `slack_bolt.oauth` with SQLite installation store for multi-workspace |
+| Database | Supabase (PostgreSQL) — credentials, process configs, and OAuth installations |
+| OAuth | Flask + `slack_bolt.oauth` with Supabase-backed installation store for multi-workspace |
 | Deployment | Docker on GCP e2-micro (Dockerfile + docker-compose) |
 | Runtime | Python 3.11+, managed with `uv` |
 
