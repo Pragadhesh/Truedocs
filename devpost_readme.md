@@ -8,7 +8,7 @@ Every developer has been there.
 
 You're on-call, something breaks at 11 PM, and you pull up the runbook. It says the deployment window is 2–7 PM. But you *vaguely* remember someone saying in Slack last week that it changed. So you start scrolling through `#deployments`, hunting for that message, trying to figure out if it's still the case or if that was a one-time thing. By the time you find the answer, fifteen minutes have passed.
 
-I've lived this exact situation more times than I can count — and not just for deployment windows. On-call handoff times, rollback procedures, escalation contacts, environment URLs... all of it slowly drifts out of sync with the actual team docs while the *real* knowledge quietly accumulates in Slack threads that nobody goes back to update.
+I've lived this exact situation more times than I can count — and not just for deployment windows. On-call handoff times, rollback procedures, escalation contacts, environment URLs... all of it slowly drifts out of sync with the actual team docs while the *real* knowledge quietly accumulates in Slack threads that nobody goes back to update. The same goes for solved issues and FAQs — someone figures out a tricky setup problem, posts the fix in a thread, gets a few 👍s, and that's where it stays. The next person with the same problem either finds it by luck or spends an hour solving it again from scratch.
 
 The documentation doesn't go bad all at once. It happens one announcement at a time. Someone posts *"heads up, we're freezing deploys for December"* in the channel. Nobody updates the runbook. Six months later, a new engineer follows the doc and wonders why they can't push anything.
 
@@ -61,7 +61,7 @@ Four change types:
 
 ### Architecture
 
-![TrueDocs System Architecture](images/architecture.png)
+![TrueDocs System Architecture](https://raw.githubusercontent.com/Pragadhesh/Truedocs/master/images/architecture.png)
 
 ### Tech stack
 
