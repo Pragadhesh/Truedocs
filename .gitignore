@@ -56,3 +56,6 @@ pip
 .pytest_cache/
 .tox
 tmp.txt
+
+# Remotion video project
+remotion/
