@@ -18,6 +18,7 @@ from .drift_actions import (
     handle_approve_drift_item,
     handle_reject_drift_item,
 )
+from .ask_scan_action import handle_run_scan_from_ask
 
 
 def register(app: App):
@@ -31,3 +32,4 @@ def register(app: App):
     app.action("reject_drift")(handle_reject_drift)
     app.action("approve_drift_item")(handle_approve_drift_item)
     app.action("reject_drift_item")(handle_reject_drift_item)
+    app.action("run_scan_from_ask")(handle_run_scan_from_ask)
